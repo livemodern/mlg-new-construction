@@ -1,5 +1,6 @@
 // MLG New Construction Tool v1.0.1
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 const PROJECTS = {
   maisondor: {
@@ -664,9 +665,9 @@ function GalleryModal({ images, startIndex, onClose }) {
     return () => window.removeEventListener("keydown", h);
   }, []);
 
-  return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", backgroundColor: "rgba(0,0,0,0.92)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} className="gallery-modal-overlay">
-      <button onClick={onClose} style={{ position: "fixed", top: 18, right: 24, background: "none", border: "none", color: "#fff", fontSize: 26, cursor: "pointer", opacity: 0.7, zIndex: 10000 }}>✕</button>
+  return createPortal(
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.92)", zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+      <button onClick={onClose} style={{ position: "fixed", top: 18, right: 24, background: "none", border: "none", color: "#fff", fontSize: 26, cursor: "pointer", opacity: 0.7, zIndex: 100000 }}>✕</button>
       <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, maxWidth: "90vw" }}>
         <img src={images[idx].url} alt={images[idx].caption}
           style={{ maxWidth: "90vw", maxHeight: "72vh", objectFit: "contain", borderRadius: 4, boxShadow: "0 4px 40px rgba(0,0,0,0.5)" }}
@@ -682,7 +683,8 @@ function GalleryModal({ images, startIndex, onClose }) {
             style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === images.length - 1 ? "#555" : "#fff", padding: "8px 22px", borderRadius: 4, cursor: idx === images.length - 1 ? "default" : "pointer", fontSize: 18 }}>→</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
