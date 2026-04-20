@@ -608,6 +608,14 @@ function fmt(n) {
   return "$" + (n >= 1000000 ? (n / 1000000).toFixed(n % 1000000 === 0 ? 0 : 2) + "M" : n.toLocaleString());
 }
 
+// Modal overlay needs dark bg — injected as style tag to beat global CSS overrides
+const MODAL_STYLE = `
+  .gallery-modal-overlay {
+    background: rgba(0,0,0,0.92) !important;
+    background-color: rgba(0,0,0,0.92) !important;
+  }
+`;
+
 // ─── LOCKED THEME — DO NOT MODIFY ────────────────────────────────────────────
 const T = {
   bg:          "#ffffff",  // page background
@@ -657,7 +665,7 @@ function GalleryModal({ images, startIndex, onClose }) {
   }, []);
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", backgroundColor: "rgba(0,0,0,0.92)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} className="gallery-modal-overlay">
       <button onClick={onClose} style={{ position: "fixed", top: 18, right: 24, background: "none", border: "none", color: "#fff", fontSize: 26, cursor: "pointer", opacity: 0.7, zIndex: 10000 }}>✕</button>
       <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, maxWidth: "90vw" }}>
         <img src={images[idx].url} alt={images[idx].caption}
@@ -1087,6 +1095,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#ffffff", color: "#111111", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", colorScheme: "light" }}>
+      <style>{MODAL_STYLE}</style>
       {/* Nav */}
       <div style={{ background: T.bgNav, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "stretch", padding: "0 20px", position: "sticky", top: 0, zIndex: 100, overflowX: "auto", boxShadow: "0 1px 4px rgba(0,0,0,0.08)" }}>
         <div style={{ display: "flex", alignItems: "center", paddingRight: 24, marginRight: 8, borderRight: `1px solid ${T.border}`, flexShrink: 0 }}>
