@@ -1,0 +1,125 @@
+const maisondor = {
+
+    id: "maisondor",
+    name: "Maison d'Or",
+    subtitle: "South Flagler",
+    tagline: "House of Gold — Ultra-Luxury Boutique Residences",
+
+    // ── Contact & Identity ───────────────────────────────────────
+    address: "3705 South Flagler Drive, West Palm Beach, FL 33405",
+    phone: "561.273.7900",
+    phone2: null,
+    email: "info@LiveMaisondOr.com",
+    website: "LiveMaisondOr.com",
+    salesGallery: "3014 South Dixie Hwy, West Palm Beach, FL 33405",
+    instagram: "https://www.instagram.com/maison.dor.southflagler/",
+
+    // ── Status & Timeline ────────────────────────────────────────
+    status: "Pre-Construction / Sales Launched",
+    salesLaunch: "January 2026",
+    estimatedDelivery: "TBD",
+    constructionStart: "TBD",
+    constructionLoan: null,
+
+    // ── Team ─────────────────────────────────────────────────────
+    developer: "Kolter Urban + Perko Development Partners",
+    architect: "10 Design",
+    architectOfRecord: null,
+    interiorDesigner: "Hirsch Bedner Associates (HBA)",
+    landscape: "EDSA",
+    salesBroker: "Maison d'Or Realty Sales, LLC (exclusive)",
+    management: "TBD",
+
+    // ── Building Specs ───────────────────────────────────────────
+    totalUnits: 39,
+    totalFloors: 19,
+    towers: null,
+    residencesPerFloor: "2–3",
+    siteSF: "1.4 acres",
+    amenitiesSF: null,
+    leedCertified: null,
+
+    // ── Pricing & Units ──────────────────────────────────────────
+    priceRange: "$5.7M – $15M+",
+    priceFrom: 5700000,
+    priceTo: 15000000,
+    unitSizeRange: "~3,000 – 10,000+ SF interior",
+    bedrooms: "2–4 Bedrooms + Den",
+    views: "Intracoastal Waterway, Atlantic Ocean, Palm Beach Island, City Skyline",
+    parking: "Private elevator entry; valet available",
+    depositStructure: null,
+
+    // ── Location Context ─────────────────────────────────────────
+    locationNote: "Across Intracoastal from Mar-a-Lago on South Flagler Drive",
+    accentColor: "#C49A3C",
+    darkColor: "#100c00",
+    theme: "gold",
+    renderings: [
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Facade.jpg", caption: "Facade", category: "Exterior" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Hero-East-Face.jpg", caption: "East Face", category: "Exterior" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Hero-West-Face.jpg", caption: "West Face", category: "Exterior" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Hover-Vista_25.11.06.jpg", caption: "Aerial Vista", category: "Exterior" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-West-Porte-Cochere.jpg", caption: "West Porte Cochère", category: "Exterior" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Lobby-Entry.jpg", caption: "Lobby Entrance", category: "Common Areas" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Resident-Clubroom.jpg", caption: "Resident Clubroom", category: "Common Areas" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-East-Pool-Deck.jpg", caption: "East Pool Deck", category: "Amenities" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Hero-Pool-Deck.jpg", caption: "Pool Deck Hero", category: "Amenities" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Pool-Cabana-Vignette.jpg", caption: "Pool Cabana", category: "Amenities" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-PH-Terrace.jpg", caption: "Penthouse Terrace", category: "Residences" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Residence-A-Great-Room.jpg", caption: "Res. A — Great Room", category: "Residences" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Residence-A-Great-Room-Terrace.jpg", caption: "Res. A — Great Room Terrace", category: "Residences" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Residence-A-Kitchen.jpg", caption: "Res. A — Kitchen", category: "Residences" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Residence-A-Den.jpg", caption: "Res. A — Den", category: "Residences" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Residence-B-Terrace.jpg", caption: "Res. B — Terrace", category: "Residences" },
+      { url: "https://livemaisondor.com/wp-content/uploads/2025/12/Maison-dOr-Residence-C-Great-Room.jpg", caption: "Res. C — Great Room", category: "Residences" },
+    ],
+    floorPlanImages: [
+      { name: "Residence A1", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/A1.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Residence-A1-Broker.pdf" },
+      { name: "Residence A", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/A.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Residence-A-Broker.pdf" },
+      { name: "Residence B", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/B.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Residence-B-Broker.pdf" },
+      { name: "Residence C1", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/C1.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Residence-C1-Broker.pdf" },
+      { name: "Residence C", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/C.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Residence-C-Broker.pdf" },
+      { name: "Estate A", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/Estate-A.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Estate-A-Broker.pdf" },
+      { name: "Estate B", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/Estate-B.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Estate-B-Broker.pdf" },
+      { name: "Lower Penthouse A", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/LPH-A.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Penthouse-LPH-A-Broker.pdf" },
+      { name: "Lower Penthouse B", thumb: "https://livemaisondor.com/wp-content/uploads/2026/03/LPH-B.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Penthouse-LPH-B-Broker.pdf" },
+      { name: "Penthouse", thumb: "https://livemaisondor.com/wp-content/uploads/2025/12/PH.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2026/04/Penthouse-PH-Broker.pdf" },
+    ],
+    brokerDocs: [
+      { name: "Fact Sheet", thumb: "https://livemaisondor.com/wp-content/uploads/2025/12/MaisondOr-Fact-Sheet.jpg", pdf: "https://livemaisondor.com/wp-content/uploads/2025/12/MaisondOr-Fact-Sheet.pdf" },
+      { name: "POI Neighborhood Map", thumb: "https://livemaisondor.com/wp-content/uploads/2026/01/MaisondOr-POI-Map-R3-Digital.png", pdf: "https://livemaisondor.com/wp-content/uploads/2026/01/MaisondOr-POI-Map-R3-Digital.pdf" },
+    ],
+    amenities: [
+      { category: "Aquatic & Outdoor", icon: "🏊", items: ["Elevated pool deck with panoramic Intracoastal views", "Resort-style pool with full-service cabanas", "New-construction dockage — direct water access (rare on South Flagler)", "Spa pool & outdoor relaxation areas"] },
+      { category: "Social & Entertainment", icon: "🥂", items: ["Club Lounge with cocktail bar — 'The Green Room' (palm-print wallpaper)", "Private dining room with catering kitchen", "Screening theater — moody, plush lounge seating", "Virtual sports swing simulator suite", "Private wine storage & tasting room"] },
+      { category: "Wellness & Spa", icon: "🧖", items: ["Full-service spa with steam rooms & sauna", "Fitness center", "Salon & grooming services", "Dedicated dog spa"] },
+      { category: "Resident Services", icon: "🔑", items: ["Two furnished guest suites for owner use", "Bespoke concierge: private aviation, yacht charter, personal chefs, fitness training, event planning", "Comprehensive owner-absentee care program", "Private elevator entry per residence", "24/7 building services"] },
+      { category: "Interior Finishes", icon: "✨", items: ["Floor-to-ceiling windows throughout", "East & west terraces in every residence", "Ceiling heights up to 11 ft in penthouse residences", "Custom cabinetry with quartz countertops", "Premium Sub-Zero & Wolf appliances", "Inspired by Mediterranean & Regency styles (HBA)", "Vibrant accents of gold, pink, green & blue in common areas"] },
+    ],
+    floorPlans: [
+      { name: "Residence A1", beds: "3 Bed + Den", baths: "4.5 Bath", floors: "Level 4 only", sqft: 4141, priceFrom: 7799000, tier: "Residence" },
+      { name: "Residence A", beds: "3 Bed + Den", baths: "4.5 Bath", floors: "Levels 5–14", sqft: 4353, priceFrom: 8499000, tier: "Residence" },
+      { name: "Residence B", beds: "2 Bed + Den", baths: "3 Bath", floors: "Levels 4–14", sqft: 2991, priceFrom: 5799000, tier: "Residence" },
+      { name: "Residence C1", beds: "3 Bed + Den", baths: "4.5 Bath", floors: "Level 4 only", sqft: 4230, priceFrom: 7699000, tier: "Residence" },
+      { name: "Residence C", beds: "3 Bed + Den", baths: "4.5 Bath", floors: "Levels 5–14", sqft: 4430, priceFrom: 7999000, tier: "Residence" },
+      { name: "Estate A", beds: "4 Bed + Den", baths: "5.5 Bath", floors: "Levels 15–17", sqft: 5922, priceFrom: 12999000, tier: "Estate" },
+      { name: "Estate B", beds: "4 Bed + Den", baths: "5.5 Bath", floors: "Levels 15–17", sqft: 5739, priceFrom: 12999000, tier: "Estate" },
+      { name: "Lower Penthouse A", beds: "4 Bed + Den", baths: "5.5 Bath", floors: "Level 18", sqft: 5922, priceFrom: 14999000, tier: "Penthouse" },
+      { name: "Lower Penthouse B", beds: "4 Bed + Den", baths: "5.5 Bath", floors: "Level 18", sqft: 5739, priceFrom: 14999000, tier: "Penthouse" },
+      { name: "Penthouse", beds: "4+ Bed", baths: "5+ Bath", floors: "Level 19 (Full Floor)", sqft: 10000, priceFrom: null, tier: "Penthouse", note: "Pricing by request only" },
+    ],
+    keyFacts: [
+      "Only 39 residences — ultra-boutique exclusivity on South Flagler",
+      "Situated directly across the Intracoastal from Mar-a-Lago",
+      "Sunrise over Intracoastal & Atlantic (east) + sunset over city (west) from every home",
+      "Flow-through floor plans — east & west terraces standard in every residence",
+      "Private new-construction dockage — rare amenity on South Flagler Drive",
+      "8 distinct floor plan configurations from ~3,000 to 10,000+ SF",
+      "Penthouse spans entire 19th floor — over 10,000 SF",
+      "Named 'Maison d'Or' (House of Gold) — inspired by ethereal Floridian golden light",
+      "Price sheet updated December 2025 — Penthouse pricing by request",
+    ],
+  
+};
+
+export default maisondor;
