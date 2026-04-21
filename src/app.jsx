@@ -1,6 +1,8 @@
 // MLG New Construction Tool v1.0.1
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import PROJECTS_DATA from "./data/index.js";
+import AddProject from "./AddProject.jsx";
 
 const PROJECTS = PROJECTS_DATA;
 
