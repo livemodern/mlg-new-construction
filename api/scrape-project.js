@@ -131,7 +131,8 @@ export default async function handler(req, res) {
     const phones = [...new Set((text.match(/\b\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/g) || []))].slice(0, 2);
     const emailMatch = text.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/);
     const email = emailMatch && !emailMatch[0].includes('wpenginepowered') ? emailMatch[0] : null;
-    const addrMatch = text.match(/\d+\s+[A-Za-z0-9\s.]+(?:Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Boulevard|Blvd|Lane|Ln|Way|Court|Ct|Place|Pl|Highway|Hwy|Railroad)[^,\n]{0,30}(?:,\s*(?:Suite|Ste|#)[^,\n]{0,20})?(?:,\s*[A-Za-z\s]+,\s*[A-Z]{2}\s*\d{5})?/i);
+    // Match street address - require it starts with a building number (2-5 digits max, not a phone)
+    const addrMatch = text.match(/\b(\d{1,5})\s+[A-Z][A-Za-z0-9\s.]+(?:Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Boulevard|Blvd|Lane|Ln|Way|Court|Ct|Place|Pl|Highway|Hwy|Railroad)[^,\n]{0,30}(?:,\s*(?:Suite|Ste|#)[^,\n]{0,20})?(?:,\s*[A-Za-z\s]+,\s*[A-Z]{2}\s*\d{5})?/);
     const address = addrMatch ? addrMatch[0].trim() : null;
 
     // Building name & tagline
