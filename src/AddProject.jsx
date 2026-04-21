@@ -153,15 +153,31 @@ function StepScrape({ project, setProject, method, onNext }) {
       .filter((p, i) => selectedPdfs.has(i) && p.type === "floorplan")
       .map(p => ({ name: p.name, thumb: null, pdf: p.url }));
 
+    // Apply ALL extracted fields — only overwrite if scraper found something
     setProject(prev => ({
       ...prev,
       id: result.suggestedId || prev.id,
       name: result.suggestedName || prev.name,
+      tagline: result.tagline || prev.tagline,
       address: result.address || prev.address,
       phone: result.phone || prev.phone,
       phone2: result.phone2 || prev.phone2,
       email: result.email || prev.email,
       website: result.website || prev.website,
+      instagram: result.instagram || prev.instagram,
+      status: result.status || prev.status,
+      salesLaunch: result.salesLaunch || prev.salesLaunch,
+      estimatedDelivery: result.estimatedDelivery || prev.estimatedDelivery,
+      developer: result.developer || prev.developer,
+      architect: result.architect || prev.architect,
+      interiorDesigner: result.interiorDesigner || prev.interiorDesigner,
+      totalUnits: result.totalUnits || prev.totalUnits,
+      totalFloors: result.totalFloors || prev.totalFloors,
+      priceRange: result.priceRange || prev.priceRange,
+      priceFrom: result.priceFrom || prev.priceFrom,
+      unitSizeRange: result.unitSizeRange || prev.unitSizeRange,
+      bedrooms: result.bedrooms || prev.bedrooms,
+      keyFacts: result.keyFacts?.length ? result.keyFacts : prev.keyFacts,
       renderings,
       brokerDocs,
       floorPlanImages,
