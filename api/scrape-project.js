@@ -1,4 +1,4 @@
-// api/scrape-project.js v2.0 — AI cleanup, floor plans, press/blog crawl
+// api/scrape-project.js
 // Deep multi-page scraper — visits home, amenities, residences, team, contact pages
 // and extracts everything it can to pre-fill the Add Building form.
 
@@ -243,7 +243,11 @@ export default async function handler(req, res) {
     try {
       const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
           max_tokens: 1000,
