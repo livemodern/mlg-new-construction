@@ -4,7 +4,6 @@
 // to find pricing/press/specs, enforces mandatory fields, returns complete profile
 
 export const maxDuration = 300;
-const https = require('https');
 const http  = require('http');
 
 const PEOPLE_BLOCK = /headshot|portrait|\.?team|staff|executive|director|bio|author|speaker|ceo|president|founder|partner|employee|agent-photo|broker-photo/i;
