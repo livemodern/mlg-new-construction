@@ -90,8 +90,11 @@ export default async function handler(req, res) {
   if (!url) return res.status(400).json({ error: 'url is required' });
 
   try {
-    const baseUrl = url.startsWith('http') ? url : `https://${url}`;
+    // Clean and normalize URL
+    const rawUrl = url.trim().split(/\s/)[0];
+    const baseUrl = rawUrl.startsWith('http') ? rawUrl : 'https://' + rawUrl;
     const base = new URL(baseUrl);
+    const hostname = base.hostname.replace('www.', '');
 
     // Fetch home page first
     const homeHtml = await fetchPage(baseUrl);
@@ -188,7 +191,7 @@ export default async function handler(req, res) {
     const igMatch = allHtml.match(/instagram\.com\/([A-Za-z0-9_.]+)/i);
     const instagram = igMatch ? `https://www.instagram.com/${igMatch[1]}/` : null;
 
-    const suggestedId = base.hostname.replace('www.','').replace(/\.(com|net|org|io).*/,'').replace(/[^a-z0-9]/g,'');
+    const suggestedId = hostname.replace(/\.(com|net|org|io).*/,'').replace(/[^a-z0-9]/g,'');
 
     return res.status(200).json({
       // Pre-filled project fields — these map directly to the form
