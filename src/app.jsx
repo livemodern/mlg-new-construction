@@ -388,7 +388,7 @@ function ProjectView({ project, onEdit }) {
       <div style={{ padding: isMobile ? "16px 16px 0" : "24px 32px 0", background: T.bg }}>
         <div style={{ display: "flex", flexDirection: isMobile ? "column-reverse" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "flex-start", gap: isMobile ? 6 : 12, marginBottom: 6 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: accent, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>{project.subtitle}</div>
+            <div style={{ fontSize: 12, fontWeight: 500, color: accent, marginBottom: 4 }}>{project.subtitle}</div>
             <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight: 300, color: T.text, margin: 0, lineHeight: 1.1, letterSpacing: "-0.01em" }}>{project.suggestedName || project.name}</h1>
             {project.tagline && <div style={{ fontSize: 13, color: T.textSub, marginTop: 4 }}>{project.tagline}</div>}
           </div>
