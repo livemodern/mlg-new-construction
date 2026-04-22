@@ -250,7 +250,7 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
+          max_tokens: 4000,
           messages: [{
             role: 'user',
             content: `You are cleaning data scraped from a luxury real estate website.
@@ -316,10 +316,20 @@ Return ONLY the JSON object. No explanation. No markdown backticks.`
       if (aiRes.ok) {
         const aiData = await aiRes.json();
         const aiText = aiData.content?.[0]?.text || '';
+        console.log('[AI] response length:', aiText.length);
+        console.log('[AI] preview:', aiText.substring(0, 300));
         const jsonMatch = aiText.match(/\{[\s\S]+\}/);
         if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          cleaned = { ...raw, ...parsed };
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            cleaned = { ...raw, ...parsed };
+            console.log('[AI] SUCCESS — fields set:', Object.keys(parsed).filter(k => parsed[k] !== null && parsed[k] !== undefined).length);
+          } catch (parseErr) {
+            console.error('[AI] JSON parse failed:', parseErr.message);
+            console.error('[AI] Raw response:', aiText.substring(0, 500));
+          }
+        } else {
+          console.error('[AI] No JSON block found. Response:', aiText.substring(0, 500));
         }
       }
     } catch (aiErr) {
