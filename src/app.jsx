@@ -70,14 +70,14 @@ function GalleryModal({ images, startIndex, onClose }) {
   const img = images[idx];
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.93)", zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-      <button onClick={onClose} style={{ position: "fixed", top: 16, right: 20, background: "none", border: "none", color: "#fff", fontSize: 28, cursor: "pointer", zIndex: 100000, padding: "8px 12px" }}>✕</button>
+      <button onClick={onClose} style={{ position: "fixed", top: 16, right: 16, background: "rgba(0,0,0,0.6)", border: "2px solid rgba(255,255,255,0.4)", color: "#fff", fontSize: 18, cursor: "pointer", zIndex: 100001, padding: "0", borderRadius: "50%", width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, lineHeight: 1 }}>✕</button>
       <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, maxWidth: "92vw" }}>
         <img src={img.url} alt={img.caption} style={{ maxWidth: "92vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 4 }} onError={e => e.target.alt = "Image unavailable"} />
         <div style={{ color: "#eee", fontSize: 13, textAlign: "center" }}>{img.caption}<span style={{ color: "#aaa", marginLeft: 8 }}>— {img.category}</span></div>
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <button onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={idx === 0} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === 0 ? "#555" : "#fff", padding: "10px 20px", borderRadius: 4, cursor: idx === 0 ? "default" : "pointer", fontSize: 18 }}>‹</button>
+          <button onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={idx === 0} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === 0 ? "#555" : "#fff", padding: "0", borderRadius: 8, cursor: idx === 0 ? "default" : "pointer", fontSize: 24, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
           <span style={{ color: "#aaa", fontSize: 12 }}>{idx + 1} / {images.length}</span>
-          <button onClick={() => setIdx(i => Math.min(i + 1, images.length - 1))} disabled={idx === images.length - 1} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === images.length - 1 ? "#555" : "#fff", padding: "10px 20px", borderRadius: 4, cursor: idx === images.length - 1 ? "default" : "pointer", fontSize: 18 }}>›</button>
+          <button onClick={() => setIdx(i => Math.min(i + 1, images.length - 1))} disabled={idx === images.length - 1} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === images.length - 1 ? "#555" : "#fff", padding: "0", borderRadius: 8, cursor: idx === images.length - 1 ? "default" : "pointer", fontSize: 24, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
         </div>
       </div>
     </div>
@@ -247,7 +247,7 @@ function PricingTab({ buildingId, accent }) {
 
 // ── EditModal ─────────────────────────────────────────────────────────────
 function EditModal({ building, onSave, onClose }) {
-  const [data, setData] = useState({ ...building });
+  const [data, setData] = useState({ ...building, suggestedName: building.suggestedName || building.name || '' });
   const [saving, setSaving] = useState(false);
   const isMobile = useIsMobile();
 
@@ -301,7 +301,7 @@ function EditModal({ building, onSave, onClose }) {
       <div style={{ background: T.bg, width: isMobile ? "100%" : 620, maxHeight: isMobile ? "92vh" : "88vh", borderRadius: isMobile ? "16px 16px 0 0" : 12, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Header */}
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${T.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Edit: {data.suggestedName || "Building"}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Edit: {data.suggestedName || data.name || "Building"}</div>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: T.textMuted, padding: "4px 8px" }}>✕</button>
         </div>
         {/* Form */}
@@ -502,15 +502,46 @@ function ProjectView({ project, onEdit, onDelete }) {
               <div style={{ color: T.textMuted, fontStyle: "italic", fontSize: 14, padding: "32px 0", textAlign: "center" }}>No floor plans loaded yet. Upload a PDF in the Add Building flow or edit this building.</div>
             ) : (
               <>
-                {project.floorPlanImages?.length > 0 && <RenderingGallery renderings={project.floorPlanImages} accent={accent} />}
+                {/* Floor plan images — handle { url, caption, category } OR { name, thumb, pdf } */}
+                {project.floorPlanImages?.length > 0 && (() => {
+                  const fpi = project.floorPlanImages;
+                  const isNewFormat = fpi[0] && fpi[0].thumb !== undefined;
+                  if (isNewFormat) {
+                    return (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 20 }}>
+                        {fpi.map((fp, i) => (
+                          <a key={i} href={fp.pdf} target="_blank" rel="noreferrer" style={{ textDecoration: "none", borderRadius: 8, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgCard, display: "block" }}>
+                            {fp.thumb && <img src={fp.thumb} alt={fp.name} style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }} onError={e => e.target.style.display = "none"} />}
+                            <div style={{ padding: "8px 12px" }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{fp.name}</div>
+                              {fp.pdf && <div style={{ fontSize: 11, color: accent, marginTop: 2 }}>View PDF ↗</div>}
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    );
+                  }
+                  return <RenderingGallery renderings={fpi} accent={accent} />;
+                })()}
                 {project.floorPlans?.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
+                  <div style={{ marginTop: 8 }}>
                     {project.floorPlans.map((plan, i) => (
-                      <div key={i} style={{ padding: "14px 16px", border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 8, background: T.bgCard }}>
-                        <div style={{ fontWeight: 700, fontSize: 14 }}>{plan.name}</div>
-                        <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
-                          {[plan.beds && plan.beds + " BR", plan.baths && plan.baths + " BA", plan.sqft && plan.sqft.toLocaleString() + " SF", plan.price && fmt(plan.price)].filter(Boolean).join("  ·  ")}
+                      <div key={i} style={{ padding: "14px 16px", border: `1px solid ${T.border}`, borderRadius: 8, marginBottom: 8, background: T.bgCard, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{plan.name || plan.model}</div>
+                          <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
+                            {[
+                              plan.beds && String(plan.beds),
+                              plan.baths && String(plan.baths),
+                              (plan.sqft || plan.interiorSF) && ((plan.sqft || plan.interiorSF)).toLocaleString() + " SF interior",
+                              plan.terraceSF && plan.terraceSF.toLocaleString() + " SF terrace",
+                              plan.exposure && plan.exposure + " exposure",
+                            ].filter(Boolean).join("  ·  ")}
+                          </div>
                         </div>
+                        {(plan.price || plan.priceFrom) && (
+                          <div style={{ fontSize: 14, fontWeight: 700, color: accent }}>{fmt(plan.price || plan.priceFrom)}</div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -525,11 +556,32 @@ function ProjectView({ project, onEdit, onDelete }) {
           <div>
             {(!project.amenities || project.amenities.length === 0) ? (
               <div style={{ color: T.textMuted, fontStyle: "italic", fontSize: 14, padding: "32px 0", textAlign: "center" }}>No amenities listed yet.</div>
-            ) : (
+            ) : typeof project.amenities[0] === "string" ? (
+              // Flat string format
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
                 {project.amenities.map((a, i) => (
                   <div key={i} style={{ padding: "12px 16px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 13, color: T.text, display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ color: accent, fontSize: 12 }}>◆</span> {a}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              // Grouped object format { category, icon, items[] }
+              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                {project.amenities.map((group, i) => (
+                  <div key={i}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, paddingBottom: 8, borderBottom: `1px solid ${T.border}` }}>
+                      {group.icon && <span style={{ fontSize: 16 }}>{group.icon}</span>}
+                      <span style={{ textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11, fontWeight: 800, color: T.textMuted }}>{group.category}</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 6 }}>
+                      {(group.items || []).map((item, j) => (
+                        <div key={j} style={{ padding: "10px 14px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 13, color: T.text, display: "flex", alignItems: "flex-start", gap: 10, lineHeight: 1.4 }}>
+                          <span style={{ color: accent, fontSize: 11, flexShrink: 0, marginTop: 2 }}>◆</span>
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -555,7 +607,7 @@ function ProjectView({ project, onEdit, onDelete }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {project.brokerDocs.map((doc, i) => (
-                  <a key={i} href={doc.url} target="_blank" rel="noreferrer" style={{ padding: "14px 18px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, textDecoration: "none", display: "flex", alignItems: "center", gap: 12 }}>
+                  <a key={i} href={doc.pdf || doc.url} target="_blank" rel="noreferrer" style={{ padding: "14px 18px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, textDecoration: "none", display: "flex", alignItems: "center", gap: 12, minHeight: 64 }}>
                     <span style={{ fontSize: 20 }}>📄</span>
                     <div>
                       <div style={{ fontSize: 14, fontWeight: 600, color: T.text }}>{doc.name}</div>
