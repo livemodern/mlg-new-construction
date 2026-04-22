@@ -163,13 +163,46 @@ export default function AddProject({ onComplete, onCancel }) {
       } catch (e) { log.push("⚠ PDF error (" + pdf.name + "): " + e.message); }
     }
 
-    // 3. Add direct links as broker docs
+    // 3. Direct PDF links -- fetch and extract via upload-pdf
     const validLinks = directLinks.filter(l => l.trim().startsWith("http"));
     for (const link of validLinks) {
-      if (!merged.brokerDocs) merged.brokerDocs = [];
       const name = decodeURIComponent(link.split("/").pop().split("?")[0]) || "Document";
-      merged.brokerDocs.push({ name, url: link, pdf: link });
-      log.push("✓ Link added: " + name);
+      const isPdf = link.toLowerCase().includes(".pdf") || link.includes("dl=1");
+      if (isPdf) {
+        setProcessingMsg("Extracting from " + name + "...");
+        try {
+          const pdfRes = await fetch(link);
+          if (pdfRes.ok) {
+            const buf = await pdfRes.arrayBuffer();
+            const r = await fetch("/api/upload-pdf", {
+              method: "POST",
+              headers: {
+                "x-building-id": merged.suggestedId || "new",
+                "x-doc-name": name.replace(/\.pdf$/i, ""),
+                "x-context": "building information sheet, pricing, floor plans, fact sheet",
+              },
+              body: buf,
+            });
+            const data = await r.json();
+            if (data.extracted) { merged = deepMerge(merged, data.extracted); }
+            if (!merged.brokerDocs) merged.brokerDocs = [];
+            merged.brokerDocs.push({ name, url: link, pdf: link });
+            log.push("✓ Link extracted: " + name);
+          } else {
+            if (!merged.brokerDocs) merged.brokerDocs = [];
+            merged.brokerDocs.push({ name, url: link, pdf: link });
+            log.push("⚠ Link saved (could not fetch): " + name);
+          }
+        } catch (e) {
+          if (!merged.brokerDocs) merged.brokerDocs = [];
+          merged.brokerDocs.push({ name, url: link, pdf: link });
+          log.push("⚠ Link saved (fetch error): " + name);
+        }
+      } else {
+        if (!merged.brokerDocs) merged.brokerDocs = [];
+        merged.brokerDocs.push({ name, url: link, pdf: link });
+        log.push("✓ Link added: " + name);
+      }
     }
 
     // 4. Try Dropbox/Drive folder import
