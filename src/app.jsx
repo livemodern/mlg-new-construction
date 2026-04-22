@@ -70,14 +70,15 @@ function GalleryModal({ images, startIndex, onClose }) {
   const img = images[idx];
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.93)", zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-      <button onClick={onClose} style={{ position: "fixed", top: 16, right: 16, background: "rgba(0,0,0,0.6)", border: "2px solid rgba(255,255,255,0.4)", color: "#fff", fontSize: 18, cursor: "pointer", zIndex: 100001, padding: "0", borderRadius: "50%", width: 48, height: 48, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, lineHeight: 1 }}>✕</button>
+      
       <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, maxWidth: "92vw" }}>
         <img src={img.url} alt={img.caption} style={{ maxWidth: "92vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 4 }} onError={e => e.target.alt = "Image unavailable"} />
         <div style={{ color: "#eee", fontSize: 13, textAlign: "center" }}>{img.caption}<span style={{ color: "#aaa", marginLeft: 8 }}>— {img.category}</span></div>
-        <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <button onClick={() => setIdx(i => Math.max(i - 1, 0))} disabled={idx === 0} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === 0 ? "#555" : "#fff", padding: "0", borderRadius: 8, cursor: idx === 0 ? "default" : "pointer", fontSize: 24, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
           <span style={{ color: "#aaa", fontSize: 12 }}>{idx + 1} / {images.length}</span>
           <button onClick={() => setIdx(i => Math.min(i + 1, images.length - 1))} disabled={idx === images.length - 1} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: idx === images.length - 1 ? "#555" : "#fff", padding: "0", borderRadius: 8, cursor: idx === images.length - 1 ? "default" : "pointer", fontSize: 24, width: 52, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.18)", border: "2px solid rgba(255,255,255,0.5)", color: "#fff", padding: "0", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 700, width: 64, height: 52, display: "flex", alignItems: "center", justifyContent: "center", letterSpacing: "0.04em" }}>CLOSE</button>
         </div>
       </div>
     </div>
@@ -366,10 +367,45 @@ function EditModal({ building, onSave, onClose }) {
           </Grid>
         </div>
         {/* Footer */}
-        <div style={{ padding: "14px 20px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 10, flexShrink: 0 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: "12px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 14, cursor: "pointer", color: T.text, fontWeight: 600, minHeight: 44 }}>Cancel</button>
-          <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: "12px", background: data.accentColor || "#2a2a2a", border: "none", borderRadius: 8, fontSize: 14, cursor: "pointer", color: "#fff", fontWeight: 700, minHeight: 44 }}>
-            {saving ? "Saving..." : "Save Changes"}
+        <div style={{ padding: "14px 20px", borderTop: `1px solid ${T.border}`, display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={onClose} style={{ flex: 1, padding: "12px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 14, cursor: "pointer", color: T.text, fontWeight: 600, minHeight: 44 }}>Cancel</button>
+            <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: "12px", background: data.accentColor || "#2a2a2a", border: "none", borderRadius: 8, fontSize: 14, cursor: "pointer", color: "#fff", fontWeight: 700, minHeight: 44 }}>
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+          <button
+            onClick={async () => {
+              const bid = data.id || data.suggestedId;
+              const images = (data.renderings || data.images || []).filter(i => i.url);
+              const pdfs = [
+                ...(data.floorPlanImages || []).filter(f => f.pdf).map(f => ({ url: f.pdf, name: f.name })),
+                ...(data.brokerDocs || []).filter(d => d.pdf || d.url).map(d => ({ url: d.pdf || d.url, name: d.name })),
+              ];
+              if (!images.length && !pdfs.length) { alert("No images or PDFs to download."); return; }
+              const confirmed = window.confirm("Download " + images.length + " images and " + pdfs.length + " PDFs to native storage?\nThis may take a few minutes.");
+              if (!confirmed) return;
+              setSaving(true);
+              try {
+                const r = await fetch("/api/store-assets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ buildingId: bid, images, pdfs }) });
+                const result = await r.json();
+                if (result.images?.length || result.pdfs?.length) {
+                  const updatedData = {
+                    ...data,
+                    renderings: result.images.length ? result.images : data.renderings,
+                    brokerDocs: result.pdfs.length ? result.pdfs.map(p => ({ name: p.name || p.docName, pdf: p.url, url: p.url })) : data.brokerDocs,
+                  };
+                  await fetch("/api/buildings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: bid, data: updatedData }) });
+                  alert("✓ Downloaded " + result.images.length + " images and " + result.pdfs.length + " PDFs to native storage.");
+                } else {
+                  alert("Download attempted but no files were saved. Check Vercel logs.");
+                }
+              } catch(e) { alert("Error: " + e.message); }
+              setSaving(false);
+            }}
+            style={{ padding: "10px", background: "transparent", border: `1px dashed ${T.border}`, borderRadius: 8, fontSize: 12, cursor: "pointer", color: T.textMuted, minHeight: 40 }}
+          >
+            ⬇ Download images &amp; PDFs to native storage (removes hotlinks)
           </button>
         </div>
       </div>
