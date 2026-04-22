@@ -265,7 +265,7 @@ export default function AddProject({ onComplete, onCancel }) {
           }}
         >
           <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
-          <div style={{ fontSize: 13, color: T.textSub }}>Drag & drop PDFs here, or click to browse</div>
+          <div style={{ fontSize: 13, color: T.textSub }}>Drag &amp; drop PDFs here, or click to browse</div>
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Price sheets, fact sheets, floor plan PDFs</div>
           <input ref={fileRef} type="file" accept=".pdf" multiple style={{ display: "none" }} onChange={e => addPdfFiles(e.target.files)} />
         </div>
@@ -358,7 +358,7 @@ export default function AddProject({ onComplete, onCancel }) {
           Skip, fill manually →
         </button>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
     </div>
   );
 
@@ -447,7 +447,7 @@ export default function AddProject({ onComplete, onCancel }) {
   // ═══════════════════════════════════════════════════════════════════════════
   const renderPricing = () => (
     <div>
-      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Key Facts & Highlights</h2>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Key Facts &amp; Highlights</h2>
       <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>These show as bullet points on the Overview tab. Add the most compelling selling points.</p>
       {(project.keyFacts || []).map((fact, i) => (
         <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -516,7 +516,7 @@ export default function AddProject({ onComplete, onCancel }) {
   // ═══════════════════════════════════════════════════════════════════════════
   const renderReview = () => (
     <div>
-      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Review & Add</h2>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Review &amp; Add</h2>
       <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>Review the summary below, then click Add Building to save.</p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 24 }}>
         {[
@@ -548,6 +548,14 @@ export default function AddProject({ onComplete, onCancel }) {
   // RENDER
   // ═══════════════════════════════════════════════════════════════════════════
   const steps = [renderGather, renderBasicInfo, renderTeam, renderBuilding, renderPricing, renderGallery, renderFloorPlans, renderReview];
+
+  // Inject spinner CSS once
+  if (typeof document !== 'undefined' && !document.getElementById('mlg-spinner-css')) {
+    const s = document.createElement('style');
+    s.id = 'mlg-spinner-css';
+    s.textContent = '@keyframes spin { to { transform: rotate(360deg); } }';
+    document.head.appendChild(s);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: T.bg, fontFamily: "'Inter', system-ui, sans-serif" }}>
