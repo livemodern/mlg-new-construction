@@ -1,11 +1,56 @@
-// api/store-assets.js — using fetch() for downloads + Blob REST API uploads
+// api/store-assets.js — downloads images + PDFs to Vercel Blob
 export const maxDuration = 300;
 
 function getExt(url, ct) {
-  if (url.match(/\.pdf$/i) || ct?.includes('pdf'))  return '.pdf';
-  if (url.match(/\.png$/i) || ct?.includes('png'))  return '.png';
-  if (url.match(/\.webp$/i))                        return '.webp';
+  if (url.match(/\.pdf$/i) || (ct && ct.includes('pdf')))  return '.pdf';
+  if (url.match(/\.png$/i) || (ct && ct.includes('png')))  return '.png';
+  if (url.match(/\.webp$/i))                               return '.webp';
   return '.jpg';
+}
+
+async function downloadFile(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const r = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/webp,image/jpeg,image/png,*/*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://mlg-new-construction.vercel.app/',
+      },
+    });
+    clearTimeout(timer);
+    if (!r.ok) return { error: 'HTTP ' + r.status + ' from ' + url };
+    const ct  = r.headers.get('content-type') || 'image/jpeg';
+    const buf = await r.arrayBuffer();
+    return { buf, ct };
+  } catch(e) {
+    clearTimeout(timer);
+    return { error: e.message + ' fetching ' + url };
+  }
+}
+
+async function uploadToBlob(filename, buf, ct) {
+  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  if (!token) return { error: 'BLOB_READ_WRITE_TOKEN not set' };
+  try {
+    const r = await fetch('https://blob.vercel-storage.com/' + filename, {
+      method: 'PUT',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': ct,
+        'Content-Length': String(buf.byteLength),
+      },
+      body: buf,
+    });
+    const json = await r.json();
+    if (!r.ok) return { error: 'Blob HTTP ' + r.status + ': ' + JSON.stringify(json).substring(0, 100) };
+    return json;
+  } catch(e) {
+    return { error: 'Blob upload error: ' + e.message };
+  }
 }
 
 export default async function handler(req, res) {
@@ -15,53 +60,57 @@ export default async function handler(req, res) {
 
   const results = { images: [], pdfs: [], errors: [] };
   const prefix  = 'buildings/' + buildingId + '/';
-  const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
-  const uploadToBlob = async (filename, buffer, contentType) => {
-    const r = await fetch('https://blob.vercel-storage.com/' + filename, {
-      method: 'PUT',
-      headers: { Authorization: 'Bearer ' + BLOB_TOKEN, 'Content-Type': contentType, 'x-content-type': contentType },
-      body: buffer,
-    });
-    return r.json();
-  };
+  console.log('[Assets] Starting:', images.length, 'images,', pdfs.length, 'PDFs for', buildingId);
+  console.log('[Assets] BLOB_TOKEN set:', !!process.env.BLOB_READ_WRITE_TOKEN);
 
+  // Process images one at a time to avoid memory issues
   for (let i = 0; i < images.length; i++) {
     const img = images[i];
-    try {
-      const dl = await fetch(img.url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(15000) });
-      if (!dl.ok) { results.errors.push('Download failed ' + dl.status + ': ' + img.url); continue; }
-      const ct  = dl.headers.get('content-type') || 'image/jpeg';
-      const buf = await dl.arrayBuffer();
-      const filename = prefix + 'images/' + String(i).padStart(3, '0') + getExt(img.url, ct);
-      const blob = await uploadToBlob(filename, buf, ct);
-      if (blob.url) {
-        results.images.push({ ...img, url: blob.url, originalUrl: img.url });
-        console.log('[Assets] image', i+1, '/', images.length);
-      } else {
-        results.errors.push('Blob upload failed: ' + JSON.stringify(blob).substring(0,100));
-      }
-    } catch (e) { results.errors.push(img.url + ': ' + e.message); }
+    if (!img.url) { results.errors.push('No URL for image ' + i); continue; }
+
+    const dl = await downloadFile(img.url);
+    if (dl.error) {
+      console.log('[Assets] Download error:', dl.error);
+      results.errors.push(dl.error);
+      continue;
+    }
+
+    const filename = prefix + 'images/' + String(i).padStart(3, '0') + getExt(img.url, dl.ct);
+    const blob = await uploadToBlob(filename, dl.buf, dl.ct);
+    if (blob.error) {
+      console.log('[Assets] Blob error:', blob.error);
+      results.errors.push(blob.error);
+      continue;
+    }
+    console.log('[Assets] ✓ image', i + 1, '/', images.length, '->', blob.url?.substring(0, 60));
+    results.images.push({ ...img, url: blob.url, originalUrl: img.url });
   }
 
   for (let i = 0; i < pdfs.length; i++) {
     const pdf = pdfs[i];
-    try {
-      const dl = await fetch(pdf.url, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(20000) });
-      if (!dl.ok) { results.errors.push('Download failed ' + dl.status + ': ' + pdf.url); continue; }
-      const buf      = await dl.arrayBuffer();
-      const safeName = (pdf.name || 'doc-' + i).replace(/[^a-z0-9._-]/gi, '_');
-      const filename = prefix + 'pdfs/' + safeName + '.pdf';
-      const blob = await uploadToBlob(filename, buf, 'application/pdf');
-      if (blob.url) {
-        results.pdfs.push({ ...pdf, url: blob.url, originalUrl: pdf.url });
-        console.log('[Assets] pdf', i+1, '/', pdfs.length);
-      } else {
-        results.errors.push('Blob upload failed for PDF: ' + JSON.stringify(blob).substring(0,100));
-      }
-    } catch (e) { results.errors.push((pdf.url||'unknown') + ': ' + e.message); }
+    if (!pdf.url) { results.errors.push('No URL for PDF ' + i); continue; }
+
+    const dl = await downloadFile(pdf.url);
+    if (dl.error) {
+      console.log('[Assets] PDF download error:', dl.error);
+      results.errors.push(dl.error);
+      continue;
+    }
+
+    const safeName = (pdf.name || 'doc-' + i).replace(/[^a-z0-9._-]/gi, '_');
+    const filename = prefix + 'pdfs/' + safeName + '.pdf';
+    const blob = await uploadToBlob(filename, dl.buf, 'application/pdf');
+    if (blob.error) {
+      console.log('[Assets] PDF blob error:', blob.error);
+      results.errors.push(blob.error);
+      continue;
+    }
+    console.log('[Assets] ✓ pdf', i + 1, '/', pdfs.length);
+    results.pdfs.push({ ...pdf, url: blob.url, originalUrl: pdf.url });
   }
 
-  console.log('[Assets] Done —', results.images.length, 'images,', results.pdfs.length, 'PDFs,', results.errors.length, 'errors');
+  console.log('[Assets] Done:', results.images.length, 'images,', results.pdfs.length, 'PDFs,', results.errors.length, 'errors');
+  if (results.errors.length > 0) console.log('[Assets] First 3 errors:', results.errors.slice(0, 3));
   return res.status(200).json(results);
 }
