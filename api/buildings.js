@@ -5,16 +5,32 @@ export default async function handler(req, res) {
   const KV_URL   = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 
+  // Parse KV result — handles string, object, or legacy array-wrapped formats
+  function parseResult(raw) {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch {}
+    }
+    // Fix legacy double-encoding bug: unwrap ["<json string>"]
+    if (Array.isArray(raw) && raw.length === 1) {
+      try { return JSON.parse(raw[0]); } catch { return raw[0]; }
+    }
+    return raw;
+  }
+
   const kv = {
     get: async (key) => {
       const r = await fetch(KV_URL + '/get/' + encodeURIComponent(key), { headers: { Authorization: 'Bearer ' + KV_TOKEN } });
       const j = await r.json();
-      const raw = j?.result ?? null;
-      if (!raw) return null;
-      try { return JSON.parse(raw); } catch { return raw; }
+      return parseResult(j?.result ?? null);
     },
     set: async (key, value) => {
-      const r = await fetch(KV_URL + '/set/' + encodeURIComponent(key), { method: 'POST', headers: { Authorization: 'Bearer ' + KV_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify([JSON.stringify(value)]) });
+      // Store as a JSON string directly — correct Upstash REST format
+      const r = await fetch(KV_URL + '/set/' + encodeURIComponent(key), {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + KV_TOKEN, 'Content-Type': 'application/json' },
+        body: JSON.stringify(value),
+      });
       return r.json();
     },
     del: async (key) => {
@@ -46,7 +62,8 @@ export default async function handler(req, res) {
       const keys = await kv.keys('building:*');
       const buildings = await Promise.all(keys.map(k => kv.get(k)));
       return res.status(200).json(
-        buildings.filter(Boolean).sort((a, b) => ((a.suggestedName || a.name || '') + '').localeCompare((b.suggestedName || b.name || '') + ''))
+        buildings.filter(b => b && (b.name || b.suggestedName))
+          .sort((a, b) => ((a.suggestedName || a.name || '') + '').localeCompare((b.suggestedName || b.name || '') + ''))
       );
     }
 
