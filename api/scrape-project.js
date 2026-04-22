@@ -102,12 +102,12 @@ export default async function handler(req, res) {
 
     // Discover and fetch sub-pages
     const allLinks = getLinks(homeHtml, baseUrl);
-    const keywords = ['amenities', 'residences', 'team', 'contact', 'features', 'floorplan', 'location', 'about'];
+    const keywords = ['amenities', 'floorplan', 'floor-plan', 'residences', 'team', 'contact', 'features', 'location', 'gallery', 'about', 'press', 'news', 'blog', 'updates', 'construction'];
     const toFetch = [baseUrl];
     for (const kw of keywords) {
       const match = allLinks.find(l => l.toLowerCase().includes(kw));
       if (match && !toFetch.includes(match)) toFetch.push(match);
-      if (toFetch.length >= 6) break;
+      if (toFetch.length >= 10) break;
     }
 
     // Fetch all pages in parallel
@@ -193,8 +193,8 @@ export default async function handler(req, res) {
 
     const suggestedId = hostname.replace(/\.(com|net|org|io).*/,'').replace(/[^a-z0-9]/g,'');
 
-    return res.status(200).json({
-      // Pre-filled project fields — these map directly to the form
+    // Raw extracted data
+    const raw = {
       suggestedId,
       suggestedName,
       tagline,
@@ -203,7 +203,7 @@ export default async function handler(req, res) {
       phone2: phones[1] || null,
       email,
       instagram,
-      website: base.hostname.replace('www.',''),
+      website: hostname,
       status,
       salesLaunch,
       estimatedDelivery,
@@ -216,7 +216,93 @@ export default async function handler(req, res) {
       priceFrom,
       unitSizeRange,
       bedrooms,
-      // Assets
+      // Extended fields — AI will try to find these too
+      constructionStart: null,
+      constructionLoan: null,
+      management: null,
+      salesBroker: null,
+      contractor: null,
+      landscape: null,
+      leedCertified: null,
+      locationNote: null,
+      views: null,
+      parking: null,
+      keyFacts: [],
+    };
+
+    // AI cleanup — use Claude to validate and clean extracted fields
+    let cleaned = raw;
+    try {
+      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `You are cleaning up data extracted by a web scraper from a luxury real estate website for "${suggestedName || hostname}".
+
+Here is the raw scraped data (JSON):
+${JSON.stringify(raw, null, 2)}
+
+Fix any issues and return ONLY a valid JSON object with these exact keys. Rules:
+- suggestedId: lowercase letters/numbers only, no spaces (e.g. "norahouse", "olara")
+- suggestedName: proper building name only (e.g. "Nora House", not "Nora House | Luxury Condos in West Palm Beach")
+- tagline: short marketing tagline if found, otherwise null
+- address: clean street address only, no phone numbers prepended (e.g. "955 N Railroad Avenue, Suite B, West Palm Beach, FL 33401")
+- phone/phone2: format as "561.XXX.XXXX" or null
+- email: valid email or null
+- instagram: full Instagram URL or null
+- website: domain only e.g. "norahouse.com"
+- status: must be exactly one of: "Pre-Construction / Sales Launched", "Under Construction", "Completed"
+- salesLaunch: e.g. "January 2024" or null
+- estimatedDelivery: e.g. "Q1 2028" or null
+- developer: clean name only (e.g. "The Ronto Group", not "The Ronto Group assures residents...")
+- architect: clean firm name only (e.g. "Swedroe Architecture", not partial words like "ural heritage")
+- interiorDesigner: clean firm name only or null
+- totalUnits: integer or null
+- totalFloors: integer or null
+- priceRange: formatted range e.g. "$1.5M – $6M+" or null
+- priceFrom: number in dollars e.g. 1500000 or null
+- unitSizeRange: e.g. "1,400 – 6,700 SF" or null
+- bedrooms: e.g. "2–4 Bedrooms" or null
+- constructionStart: when groundbreaking/construction started e.g. "March 2024", "Q2 2025" or null
+- constructionLoan: financing amount and lender if mentioned e.g. "$380M — GoldenTree Asset Management" or null
+- management: building management company if mentioned e.g. "Related Management" or null
+- salesBroker: exclusive sales brokerage if mentioned or null
+- contractor: general contractor if mentioned or null
+- landscape: landscape architect or firm if mentioned or null
+- leedCertified: any sustainability certification e.g. "LEED Gold", "WELL Gold" or null
+- locationNote: brief neighborhood/location description e.g. "NORA District, North Flagler Drive, West Palm Beach" or null
+- views: views from residences e.g. "Intracoastal Waterway, Atlantic Ocean, City Skyline" or null
+- parking: parking details e.g. "Private garage, 2 spaces per unit, EV charging" or null
+- keyFacts: array of 6-8 compelling bullet point strings about this property — unique selling points, notable features, facts from press releases, blog posts, or any page on the site
+
+IMPORTANT: Scan ALL text including press releases, news, blog posts, and construction update pages for fields like constructionStart, management, contractor, and keyFacts. These are often only mentioned in press coverage or update posts.
+
+Return ONLY the JSON object, no explanation, no markdown backticks.`
+          }]
+        })
+      });
+
+      if (aiRes.ok) {
+        const aiData = await aiRes.json();
+        const aiText = aiData.content?.[0]?.text || '';
+        const jsonMatch = aiText.match(/\{[\s\S]+\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          cleaned = { ...raw, ...parsed };
+        }
+      }
+    } catch (aiErr) {
+      console.error('AI cleanup error:', aiErr.message);
+      // Fall back to raw if AI fails
+    }
+
+    return res.status(200).json({
+      ...cleaned,
+      // Assets always come from scraper
       images,
       pdfs,
       pagesScraped: toFetch.length,
