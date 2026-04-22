@@ -1,4 +1,4 @@
-// api/scrape-project.js
+// api/scrape-project.js v2.0 — AI cleanup, floor plans, press/blog crawl
 // Deep multi-page scraper — visits home, amenities, residences, team, contact pages
 // and extracts everything it can to pre-fill the Add Building form.
 
