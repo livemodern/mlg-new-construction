@@ -120,6 +120,10 @@ function StepScrape({ project, setProject, method, onNext }) {
   const [error, setError] = useState(null);
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [selectedPdfs, setSelectedPdfs] = useState(new Set());
+  const [uploadedPdfs, setUploadedPdfs] = useState([]);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfResults, setPdfResults] = useState([]);
+  const [dragOver, setDragOver] = useState(false);
 
   const scrape = async () => {
     setLoading(true); setError(null); setResult(null);
@@ -132,7 +136,6 @@ function StepScrape({ project, setProject, method, onNext }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setResult(data);
-      // Pre-select all images and pdfs
       setSelectedImages(new Set(data.images.map((_, i) => i)));
       setSelectedPdfs(new Set(data.pdfs.map((_, i) => i)));
     } catch (e) {
@@ -142,42 +145,111 @@ function StepScrape({ project, setProject, method, onNext }) {
     }
   };
 
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const processPdfs = async (files) => {
+    const pdfs = Array.from(files).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
+    if (!pdfs.length) return;
+    setPdfLoading(true);
+    const newResults = [];
+    for (const file of pdfs) {
+      try {
+        const base64 = await readFileAsBase64(file);
+        const res = await fetch("/api/extract-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfBase64: base64,
+            filename: file.name,
+            existingData: result || null,
+          }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          newResults.push({ filename: file.name, extracted: data.extracted });
+          setUploadedPdfs(prev => [...prev, { name: file.name, size: file.size }]);
+        }
+      } catch (e) {
+        console.error('PDF error:', e);
+      }
+    }
+    setPdfResults(prev => [...prev, ...newResults]);
+    setPdfLoading(false);
+  };
+
   const applyAndContinue = () => {
-    if (!result) { onNext(); return; }
-    const imgs = result.images.filter((_, i) => selectedImages.has(i));
+    if (!result && !pdfResults.length) { onNext(); return; }
+    const imgs = (result?.images || []).filter((_, i) => selectedImages.has(i));
     const renderings = imgs.map(img => ({ url: img.url, caption: img.caption, category: img.category }));
-    const brokerDocs = result.pdfs
+    const brokerDocs = (result?.pdfs || [])
       .filter((p, i) => selectedPdfs.has(i) && p.type === "brokerDoc")
       .map(p => ({ name: p.name, thumb: null, pdf: p.url }));
-    const floorPlanImages = result.pdfs
+    const floorPlanImages = (result?.pdfs || [])
       .filter((p, i) => selectedPdfs.has(i) && p.type === "floorplan")
       .map(p => ({ name: p.name, thumb: null, pdf: p.url }));
 
-    // Apply ALL extracted fields — only overwrite if scraper found something
+    // Merge all PDF extracted data — PDFs take priority for pricing/specs
+    let pdfMerged = {};
+    let pdfFloorPlans = [];
+    for (const pr of pdfResults) {
+      const e = pr.extracted;
+      // Merge scalar fields — later PDFs win
+      Object.keys(e).forEach(k => {
+        if (k !== 'floorPlans' && k !== 'keyFacts' && e[k] != null) pdfMerged[k] = e[k];
+      });
+      // Collect floor plans from PDFs
+      if (e.floorPlans?.length) pdfFloorPlans = [...pdfFloorPlans, ...e.floorPlans];
+      // Merge key facts
+      if (e.keyFacts?.length) pdfMerged.keyFacts = [...(pdfMerged.keyFacts || []), ...e.keyFacts];
+    }
+
     setProject(prev => ({
       ...prev,
-      id: result.suggestedId || prev.id,
-      name: result.suggestedName || prev.name,
-      tagline: result.tagline || prev.tagline,
-      address: result.address || prev.address,
-      phone: result.phone || prev.phone,
-      phone2: result.phone2 || prev.phone2,
-      email: result.email || prev.email,
-      website: result.website || prev.website,
-      instagram: result.instagram || prev.instagram,
-      status: result.status || prev.status,
-      salesLaunch: result.salesLaunch || prev.salesLaunch,
-      estimatedDelivery: result.estimatedDelivery || prev.estimatedDelivery,
-      developer: result.developer || prev.developer,
-      architect: result.architect || prev.architect,
-      interiorDesigner: result.interiorDesigner || prev.interiorDesigner,
-      totalUnits: result.totalUnits || prev.totalUnits,
-      totalFloors: result.totalFloors || prev.totalFloors,
-      priceRange: result.priceRange || prev.priceRange,
-      priceFrom: result.priceFrom || prev.priceFrom,
-      unitSizeRange: result.unitSizeRange || prev.unitSizeRange,
-      bedrooms: result.bedrooms || prev.bedrooms,
-      keyFacts: result.keyFacts?.length ? result.keyFacts : prev.keyFacts,
+      // Web scrape data
+      id: pdfMerged.suggestedId || result?.suggestedId || prev.id,
+      name: pdfMerged.suggestedName || result?.suggestedName || prev.name,
+      tagline: result?.tagline || prev.tagline,
+      address: pdfMerged.address || result?.address || prev.address,
+      phone: pdfMerged.phone || result?.phone || prev.phone,
+      phone2: pdfMerged.phone2 || result?.phone2 || prev.phone2,
+      email: pdfMerged.email || result?.email || prev.email,
+      website: result?.website || prev.website,
+      instagram: result?.instagram || prev.instagram,
+      status: pdfMerged.status || result?.status || prev.status,
+      salesLaunch: pdfMerged.salesLaunch || result?.salesLaunch || prev.salesLaunch,
+      estimatedDelivery: pdfMerged.estimatedDelivery || result?.estimatedDelivery || prev.estimatedDelivery,
+      constructionStart: pdfMerged.constructionStart || result?.constructionStart || prev.constructionStart,
+      constructionLoan: pdfMerged.constructionLoan || result?.constructionLoan || prev.constructionLoan,
+      developer: pdfMerged.developer || result?.developer || prev.developer,
+      architect: pdfMerged.architect || result?.architect || prev.architect,
+      interiorDesigner: pdfMerged.interiorDesigner || result?.interiorDesigner || prev.interiorDesigner,
+      management: pdfMerged.management || result?.management || prev.management,
+      salesBroker: pdfMerged.salesBroker || result?.salesBroker || prev.salesBroker,
+      contractor: pdfMerged.contractor || result?.contractor || prev.contractor,
+      landscape: pdfMerged.landscape || result?.landscape || prev.landscape,
+      totalUnits: pdfMerged.totalUnits || result?.totalUnits || prev.totalUnits,
+      totalFloors: pdfMerged.totalFloors || result?.totalFloors || prev.totalFloors,
+      leedCertified: pdfMerged.leedCertified || result?.leedCertified || prev.leedCertified,
+      // PDF wins for pricing (more accurate from price sheets)
+      priceRange: pdfMerged.priceRange || result?.priceRange || prev.priceRange,
+      priceFrom: pdfMerged.priceFrom || result?.priceFrom || prev.priceFrom,
+      priceTo: pdfMerged.priceTo || prev.priceTo,
+      unitSizeRange: pdfMerged.unitSizeRange || result?.unitSizeRange || prev.unitSizeRange,
+      bedrooms: pdfMerged.bedrooms || result?.bedrooms || prev.bedrooms,
+      depositStructure: pdfMerged.depositStructure || prev.depositStructure,
+      amenitiesSF: pdfMerged.amenitiesSF || prev.amenitiesSF,
+      siteSF: pdfMerged.siteSF || prev.siteSF,
+      views: pdfMerged.views || result?.views || prev.views,
+      parking: pdfMerged.parking || result?.parking || prev.parking,
+      locationNote: pdfMerged.locationNote || result?.locationNote || prev.locationNote,
+      keyFacts: pdfMerged.keyFacts?.length ? pdfMerged.keyFacts : (result?.keyFacts?.length ? result.keyFacts : prev.keyFacts),
+      // Floor plans from PDFs
+      floorPlans: pdfFloorPlans.length ? pdfFloorPlans : prev.floorPlans,
       renderings,
       brokerDocs,
       floorPlanImages,
@@ -290,7 +362,66 @@ function StepScrape({ project, setProject, method, onNext }) {
         </div>
       )}
 
-      {!result && !loading && (
+      {/* PDF Upload — always visible */}
+      <div style={{ marginTop: result ? 24 : 0, paddingTop: result ? 24 : 0, borderTop: result ? `1px solid ${T.border}` : 'none' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>
+          📄 Upload PDFs for AI Extraction
+        </div>
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 12 }}>
+          Upload price sheets, fact sheets, floor plan PDFs — Claude will extract pricing, floor plans, team info, and more automatically.
+        </div>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); processPdfs(e.dataTransfer.files); }}
+          onClick={() => document.getElementById('pdf-upload-input').click()}
+          style={{
+            border: `2px dashed ${dragOver ? T.accent : T.borderStrong}`,
+            borderRadius: 8, padding: "24px 16px", textAlign: "center",
+            cursor: "pointer", background: dragOver ? T.accentLight : T.bgAlt,
+            transition: "all 0.15s", marginBottom: 12,
+          }}>
+          <div style={{ fontSize: 28, marginBottom: 6 }}>📂</div>
+          <div style={{ fontSize: 13, color: T.textSub }}>
+            {pdfLoading ? "⏳ Extracting data from PDF..." : "Drag & drop PDFs here, or click to browse"}
+          </div>
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Price sheets, fact sheets, floor plan PDFs</div>
+          <input
+            id="pdf-upload-input"
+            type="file"
+            accept=".pdf,application/pdf"
+            multiple
+            style={{ display: "none" }}
+            onChange={e => { processPdfs(e.target.files); e.target.value = ''; }}
+          />
+        </div>
+
+        {/* Uploaded PDFs summary */}
+        {pdfResults.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pdfResults.map((pr, i) => (
+              <div key={i} style={{ padding: "10px 14px", borderRadius: 6, background: "#f0fff4", border: "1px solid #a5d6a7", fontSize: 13 }}>
+                <div style={{ fontWeight: 700, color: "#2e7d32", marginBottom: 4 }}>✓ {pr.filename}</div>
+                <div style={{ color: T.textSub, fontSize: 12 }}>
+                  Extracted: {Object.keys(pr.extracted).filter(k => pr.extracted[k] != null && k !== 'floorPlans' && k !== 'keyFacts').join(', ')}
+                  {pr.extracted.floorPlans?.length ? ` + ${pr.extracted.floorPlans.length} floor plans` : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Continue button when no web scrape but PDFs uploaded */}
+      {!result && pdfResults.length > 0 && (
+        <button onClick={applyAndContinue} style={{ marginTop: 16, padding: "11px 28px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+          Use PDF Data & Continue →
+        </button>
+      )}
+
+      {!result && !pdfResults.length && !loading && (
         <button onClick={onNext} style={{ marginTop: 16, padding: "9px 20px", borderRadius: 6, background: T.bgAlt, color: T.textSub, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 13 }}>
           Skip, fill manually →
         </button>
