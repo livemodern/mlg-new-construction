@@ -299,17 +299,18 @@ function StepScrape({ project, setProject, method, onNext }) {
             ✓ Found <strong>{result.images.length}</strong> images and <strong>{result.pdfs.length}</strong> PDFs. Review and select below.
           </div>
 
-          {result.images.length > 0 && (
+          {/* ── Gallery Images ─────────────────────────────────── */}
+          {result.images.filter(img => img.category !== "Floor Plans").length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                Images — select to include ({selectedImages.size} selected)
+                Gallery Images ({result.images.filter(img => img.category !== "Floor Plans").length})
                 <button onClick={() => setSelectedImages(new Set(result.images.map((_, i) => i)))}
                   style={{ marginLeft: 12, fontSize: 11, color: T.accent, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Select all</button>
                 <button onClick={() => setSelectedImages(new Set())}
                   style={{ marginLeft: 8, fontSize: 11, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Clear</button>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8, maxHeight: 300, overflowY: "auto" }}>
-                {result.images.map((img, i) => (
+                {result.images.map((img, i) => img.category === "Floor Plans" ? null : (
                   <div key={i} onClick={() => {
                     const s = new Set(selectedImages);
                     s.has(i) ? s.delete(i) : s.add(i);
@@ -331,10 +332,70 @@ function StepScrape({ project, setProject, method, onNext }) {
             </div>
           )}
 
-          {result.pdfs.length > 0 && (
+          {/* ── Floor Plan Images Preview ───────────────────────── */}
+          {result.images.filter(img => img.category === "Floor Plans").length > 0 && (
+            <div style={{ marginBottom: 20, padding: 14, borderRadius: 8, border: `1px solid #b3d4f5`, background: "#f0f7ff" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1a5fa8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                📐 Floor Plans Found ({result.images.filter(img => img.category === "Floor Plans").length})
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
+                {result.images.map((img, i) => img.category !== "Floor Plans" ? null : (
+                  <div key={i} onClick={() => {
+                    const s = new Set(selectedImages);
+                    s.has(i) ? s.delete(i) : s.add(i);
+                    setSelectedImages(s);
+                  }} style={{
+                    position: "relative", aspectRatio: "3/4", borderRadius: 6, overflow: "hidden",
+                    border: `2px solid ${selectedImages.has(i) ? "#1a5fa8" : "#b3d4f5"}`,
+                    cursor: "pointer", background: "#fff",
+                  }}>
+                    <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "contain", padding: 4 }}
+                      onError={e => e.target.style.display = "none"} />
+                    {selectedImages.has(i) && (
+                      <div style={{ position: "absolute", top: 4, right: 4, background: "#1a5fa8", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>✓</div>
+                    )}
+                    {img.caption && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.6)", padding: "2px 4px", fontSize: 9, color: "#fff" }}>{img.caption}</div>}
+                  </div>
+                ))}
+              </div>
+              <div style={{ fontSize: 11, color: "#1a5fa8", marginTop: 8 }}>These will be added to the Floor Plans section automatically.</div>
+            </div>
+          )}
+
+          {/* ── Floor Plan PDFs ─────────────────────────────────── */}
+          {result.pdfs.filter(p => p.type === "floorplan").length > 0 && (
+            <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: `1px solid #b3d4f5`, background: "#f0f7ff" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#1a5fa8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                📐 Floor Plan PDFs ({result.pdfs.filter(p => p.type === "floorplan").length})
+              </div>
+              {result.pdfs.map((pdf, i) => pdf.type !== "floorplan" ? null : (
+                <div key={i} onClick={() => {
+                  const s = new Set(selectedPdfs);
+                  s.has(i) ? s.delete(i) : s.add(i);
+                  setSelectedPdfs(s);
+                }} style={{
+                  display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 6,
+                  border: `1px solid ${selectedPdfs.has(i) ? "#1a5fa8" : "#b3d4f5"}`,
+                  background: selectedPdfs.has(i) ? "#ddeeff" : "#fff", cursor: "pointer", marginBottom: 6,
+                }}>
+                  <span style={{ fontSize: 18 }}>📐</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{pdf.name}</div>
+                    <div style={{ fontSize: 11, color: "#1a5fa8" }}>Floor Plan PDF</div>
+                  </div>
+                  {selectedPdfs.has(i) && <span style={{ color: "#1a5fa8", fontWeight: 700 }}>✓</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── Broker Docs ─────────────────────────────────────── */}
+          {result.pdfs.filter(p => p.type === "brokerDoc").length > 0 && (
             <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>PDFs Found</div>
-              {result.pdfs.map((pdf, i) => (
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
+                Broker Docs ({result.pdfs.filter(p => p.type === "brokerDoc").length})
+              </div>
+              {result.pdfs.map((pdf, i) => pdf.type !== "brokerDoc" ? null : (
                 <div key={i} onClick={() => {
                   const s = new Set(selectedPdfs);
                   s.has(i) ? s.delete(i) : s.add(i);
@@ -347,7 +408,7 @@ function StepScrape({ project, setProject, method, onNext }) {
                   <span style={{ fontSize: 18 }}>📄</span>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{pdf.name}</div>
-                    <div style={{ fontSize: 11, color: T.textMuted }}>{pdf.type === "floorplan" ? "Floor Plan" : "Broker Doc"}</div>
+                    <div style={{ fontSize: 11, color: T.textMuted }}>Broker Document</div>
                   </div>
                   {selectedPdfs.has(i) && <span style={{ color: "#2e7d32", fontWeight: 700 }}>✓</span>}
                 </div>
