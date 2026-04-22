@@ -128,7 +128,7 @@ function StepScrape({ project, setProject, method, onNext }) {
   const scrape = async () => {
     setLoading(true); setError(null); setResult(null);
     try {
-      const res = await fetch("/api/scrape-project", {
+      const res = await fetch('/api/research-building', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -267,7 +267,7 @@ function StepScrape({ project, setProject, method, onNext }) {
             style={{ flex: 1, padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
           <button onClick={scrape} disabled={!url || loading}
             style={{ padding: "9px 20px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-            {loading ? "Scanning..." : "Scan"}
+            {loading ? "Researching..." : "Research with AI"}
           </button>
         </div>
         {error && <div style={{ marginTop: 12, color: "#c00", fontSize: 13 }}>Error: {error}</div>}
@@ -288,7 +288,7 @@ function StepScrape({ project, setProject, method, onNext }) {
           style={{ flex: 1, padding: "10px 14px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 14, fontFamily: "inherit" }} />
         <button onClick={scrape} disabled={!url || loading}
           style={{ padding: "10px 24px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, opacity: (!url || loading) ? 0.5 : 1 }}>
-          {loading ? "Scanning..." : "🔍 Scan"}
+          {loading ? "Researching..." : "🔍 Scan"}
         </button>
       </div>
       {error && <div style={{ padding: "10px 14px", borderRadius: 6, background: "#fff5f5", border: "1px solid #ffcccc", color: "#c00", fontSize: 13 }}>Error: {error}</div>}
@@ -426,7 +426,41 @@ function StepScrape({ project, setProject, method, onNext }) {
       {/* PDF Upload — always visible */}
       <div style={{ marginTop: result ? 24 : 0, paddingTop: result ? 24 : 0, borderTop: result ? `1px solid ${T.border}` : 'none' }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>
-          📄 Upload PDFs for AI Extraction
+          📄         {/* Dropbox / Google Drive folder import */}
+        <div style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid #e5e5e5" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>
+            📁 Import from Dropbox or Google Drive
+          </div>
+          <div style={{ fontSize: 12, color: "#999", marginBottom: 10 }}>
+            Paste a shared folder link to import all PDFs and images automatically.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <input
+              type="text"
+              placeholder="https://www.dropbox.com/sh/... or Google Drive folder URL"
+              id="mlg-folder-url"
+              style={{ flex: 1, minWidth: 200, padding: "9px 12px", border: "1px solid #e5e5e5", borderRadius: 6, fontSize: 13, fontFamily: "inherit", outline: "none" }}
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                const input = document.getElementById("mlg-folder-url");
+                const folderUrl = input && input.value.trim();
+                if (!folderUrl) return;
+                try {
+                  const r = await fetch("/api/dropbox-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folderUrl }) });
+                  const data = await r.json();
+                  if (data.error) { alert("Error: " + data.error); return; }
+                  alert("Found " + data.count + " files (" + (data.pdfs && data.pdfs.length || 0) + " PDFs, " + (data.images && data.images.length || 0) + " images).");
+                } catch(e) { alert("Error: " + e.message); }
+              }}
+              style={{ padding: "9px 16px", background: "#111", border: "none", borderRadius: 6, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            >
+              Import Folder
+            </button>
+          </div>
+        </div>
+        {/* PDF Upload section */}Upload PDFs for AI Extraction
         </div>
         <div style={{ fontSize: 12, color: T.textSub, marginBottom: 12 }}>
           Upload price sheets, fact sheets, floor plan PDFs — Claude will extract pricing, floor plans, team info, and more automatically.
