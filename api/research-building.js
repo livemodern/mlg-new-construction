@@ -11,34 +11,22 @@ const LOGO_BLOCK   = /logo|icon|favicon|badge|seal|watermark|sprite|btn-|button-
 const SKIP_EXT     = /\/(social|facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest|whatsapp|google)\./i;
 
 async function fetchPage(url) {
-  return new Promise((resolve) => {
-    try {
-      const p = new URL(url);
-      const mod = p.protocol === 'https:' ? https : http;
-      const req = mod.request({
-        hostname: p.hostname,
-        path: p.pathname + (p.search || ''),
-        method: 'GET',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,*/*',
-          'Referer': url,
-        },
-        timeout: 10000,
-      }, (res) => {
-        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          fetchPage(res.headers.location).then(resolve); return;
-        }
-        if (!res.statusCode || res.statusCode >= 400) { resolve(null); return; }
-        let b = '';
-        res.on('data', c => b += c);
-        res.on('end', () => resolve(b));
-      });
-      req.on('error', () => resolve(null));
-      req.on('timeout', () => { req.destroy(); resolve(null); });
-      req.end();
-    } catch { resolve(null); }
-  });
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    const r = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,*/*',
+        'Referer': url,
+      },
+      redirect: 'follow',
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    return await r.text();
+  } catch { return null; }
 }
 
 function toText(html) {
