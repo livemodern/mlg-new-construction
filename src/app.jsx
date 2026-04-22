@@ -367,46 +367,13 @@ function EditModal({ building, onSave, onClose }) {
           </Grid>
         </div>
         {/* Footer */}
-        <div style={{ padding: "14px 20px", borderTop: `1px solid ${T.border}`, display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-          <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ padding: "14px 20px", borderTop: `1px solid ${T.border}`, display: "flex", gap: 10, flexShrink: 0 }}>
             <button onClick={onClose} style={{ flex: 1, padding: "12px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 14, cursor: "pointer", color: T.text, fontWeight: 600, minHeight: 44 }}>Cancel</button>
             <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: "12px", background: data.accentColor || "#2a2a2a", border: "none", borderRadius: 8, fontSize: 14, cursor: "pointer", color: "#fff", fontWeight: 700, minHeight: 44 }}>
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
-          <button
-            onClick={async () => {
-              const bid = data.id || data.suggestedId;
-              const images = (data.renderings || data.images || []).filter(i => i.url);
-              const pdfs = [
-                ...(data.floorPlanImages || []).filter(f => f.pdf).map(f => ({ url: f.pdf, name: f.name })),
-                ...(data.brokerDocs || []).filter(d => d.pdf || d.url).map(d => ({ url: d.pdf || d.url, name: d.name })),
-              ];
-              if (!images.length && !pdfs.length) { alert("No images or PDFs to download."); return; }
-              const confirmed = window.confirm("Download " + images.length + " images and " + pdfs.length + " PDFs to native storage?\nThis may take a few minutes.");
-              if (!confirmed) return;
-              setSaving(true);
-              try {
-                const r = await fetch("/api/store-assets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ buildingId: bid, images, pdfs }) });
-                const result = await r.json();
-                if (result.images?.length || result.pdfs?.length) {
-                  const updatedData = {
-                    ...data,
-                    renderings: result.images.length ? result.images : data.renderings,
-                    brokerDocs: result.pdfs.length ? result.pdfs.map(p => ({ name: p.name || p.docName, pdf: p.url, url: p.url })) : data.brokerDocs,
-                  };
-                  await fetch("/api/buildings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: bid, data: updatedData }) });
-                  alert("✓ Downloaded " + result.images.length + " images and " + result.pdfs.length + " PDFs to native storage.");
-                } else {
-                  alert("Download attempted but no files were saved. Check Vercel logs.");
-                }
-              } catch(e) { alert("Error: " + e.message); }
-              setSaving(false);
-            }}
-            style={{ padding: "10px", background: "transparent", border: `1px dashed ${T.border}`, borderRadius: 8, fontSize: 12, cursor: "pointer", color: T.textMuted, minHeight: 40 }}
-          >
-            ⬇ Download images &amp; PDFs to native storage (removes hotlinks)
-          </button>
+
         </div>
       </div>
     </div>
