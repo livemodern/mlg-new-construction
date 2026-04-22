@@ -395,13 +395,13 @@ function ProjectView({ project, onEdit, onDelete }) {
     <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" }}>
       {/* Building header */}
       <div style={{ padding: isMobile ? "16px 16px 0" : "24px 32px 0", background: T.bg }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 6 }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column-reverse" : "row", justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "flex-start", gap: isMobile ? 6 : 12, marginBottom: 6 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: accent, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 4 }}>{project.subtitle}</div>
             <h1 style={{ fontSize: isMobile ? 24 : 32, fontWeight: 300, color: T.text, margin: 0, lineHeight: 1.1, letterSpacing: "-0.01em" }}>{project.suggestedName || project.name}</h1>
             {project.tagline && <div style={{ fontSize: 13, color: T.textSub, marginTop: 4 }}>{project.tagline}</div>}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", flexDirection: isMobile ? "row" : "column", alignItems: isMobile ? "center" : "flex-end", gap: 8, flexShrink: 0 }}>
             <ProjectBadge status={project.status || "Pre-Construction / Sales Launched"} />
             <button onClick={onEdit} style={{ padding: "8px 14px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 12, cursor: "pointer", color: T.textSub, fontWeight: 600, minHeight: 36 }}>Edit</button>
           </div>
