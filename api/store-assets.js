@@ -1,9 +1,7 @@
-// api/store-assets.js
-// Downloads selected images + PDFs to Vercel Blob — nothing hotlinked
+// api/store-assets.js — Downloads images + PDFs to Vercel Blob using REST API directly
 export const maxDuration = 300;
 const https = require('https');
 const http  = require('http');
-const { put } = require('@vercel/blob');
 
 async function downloadBuffer(url) {
   return new Promise((resolve) => {
@@ -14,7 +12,7 @@ async function downloadBuffer(url) {
         hostname: p.hostname,
         path: p.pathname + (p.search || ''),
         method: 'GET',
-        headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': p.origin },
+        headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': p.origin || url },
         timeout: 15000,
       }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
@@ -29,6 +27,30 @@ async function downloadBuffer(url) {
       req.on('timeout', () => { req.destroy(); resolve(null); });
       req.end();
     } catch { resolve(null); }
+  });
+}
+
+async function uploadToBlob(filename, buffer, contentType) {
+  return new Promise((resolve, reject) => {
+    const token = process.env.BLOB_READ_WRITE_TOKEN;
+    const data  = buffer;
+    const req = https.request({
+      hostname: 'blob.vercel-storage.com',
+      path: '/' + filename,
+      method: 'PUT',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': contentType,
+        'Content-Length': data.length,
+        'x-content-type': contentType,
+      },
+    }, (res) => {
+      let b = ''; res.on('data', c => b += c);
+      res.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve({ url: null, error: b }); } });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
   });
 }
 
@@ -53,9 +75,13 @@ export default async function handler(req, res) {
       const dl = await downloadBuffer(img.url);
       if (!dl) { results.errors.push('Download failed: ' + img.url); continue; }
       const filename = prefix + 'images/' + String(i).padStart(3, '0') + getExt(img.url, dl.contentType);
-      const blob = await put(filename, dl.buffer, { access: 'public', contentType: dl.contentType });
-      results.images.push({ ...img, url: blob.url, originalUrl: img.url });
-      console.log('[Assets] image', i + 1, '/', images.length, blob.url);
+      const blob = await uploadToBlob(filename, dl.buffer, dl.contentType);
+      if (blob.url) {
+        results.images.push({ ...img, url: blob.url, originalUrl: img.url });
+        console.log('[Assets] image', i + 1, '/', images.length, blob.url);
+      } else {
+        results.errors.push('Blob upload failed: ' + JSON.stringify(blob).substring(0, 100));
+      }
     } catch (e) { results.errors.push(img.url + ': ' + e.message); }
   }
 
@@ -66,9 +92,13 @@ export default async function handler(req, res) {
       if (!dl) { results.errors.push('Download failed: ' + pdf.url); continue; }
       const safeName = (pdf.name || 'doc-' + i).replace(/[^a-z0-9._-]/gi, '_');
       const filename = prefix + 'pdfs/' + safeName + '.pdf';
-      const blob = await put(filename, dl.buffer, { access: 'public', contentType: 'application/pdf' });
-      results.pdfs.push({ ...pdf, url: blob.url, originalUrl: pdf.url });
-      console.log('[Assets] pdf', i + 1, '/', pdfs.length, blob.url);
+      const blob = await uploadToBlob(filename, dl.buffer, 'application/pdf');
+      if (blob.url) {
+        results.pdfs.push({ ...pdf, url: blob.url, originalUrl: pdf.url });
+        console.log('[Assets] pdf', i + 1, '/', pdfs.length, blob.url);
+      } else {
+        results.errors.push('Blob upload failed for PDF: ' + JSON.stringify(blob).substring(0, 100));
+      }
     } catch (e) { results.errors.push((pdf.url || 'unknown') + ': ' + e.message); }
   }
 
