@@ -138,11 +138,18 @@ export default async function handler(req, res) {
     const addrMatch = text.match(/\b(\d{1,5})\s+[A-Z][A-Za-z0-9\s.]+(?:Street|St|Avenue|Ave|Drive|Dr|Road|Rd|Boulevard|Blvd|Lane|Ln|Way|Court|Ct|Place|Pl|Highway|Hwy|Railroad)[^,\n]{0,30}(?:,\s*(?:Suite|Ste|#)[^,\n]{0,20})?(?:,\s*[A-Za-z\s]+,\s*[A-Z]{2}\s*\d{5})?/);
     const address = addrMatch ? addrMatch[0].trim() : null;
 
-    // Building name & tagline
+    // Building name & tagline — try multiple sources
     const titleMatch = homeHtml.match(/<title>([^<]+)<\/title>/i);
-    const suggestedName = titleMatch ? titleMatch[1].replace(/\|.*/, '').replace(/[-–].*/, '').trim() : '';
-    const h1Match = homeHtml.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-    const tagline = h1Match ? h1Match[1].trim() : '';
+    const rawTitle = titleMatch ? titleMatch[1].trim() : '';
+    // Clean title: remove common suffixes but keep the actual building name
+    const suggestedName = rawTitle
+      .replace(/\s*[\|–\-]\s*(?:luxury|condos?|residences?|homes?|apartments?|west palm|palm beach|florida|fl|official|website|coming soon).*/gi, '')
+      .replace(/\s*[\|]\s*.*/g, '') // remove anything after pipe
+      .trim() || hostname.replace(/\.(com|net|org|io).*/,'').replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+
+    // Get h1 for tagline but don't confuse it with building name
+    const h1Match = homeHtml.match(/<h1[^>]*>([^<]{5,80})<\/h1>/i);
+    const tagline = (h1Match && h1Match[1].trim() !== suggestedName) ? h1Match[1].trim() : '';
 
     // Status
     let status = 'Pre-Construction / Sales Launched';
@@ -241,47 +248,62 @@ export default async function handler(req, res) {
           max_tokens: 1000,
           messages: [{
             role: 'user',
-            content: `You are cleaning up data extracted by a web scraper from a luxury real estate website for "${suggestedName || hostname}".
+            content: `You are cleaning data scraped from a luxury real estate website.
+Website domain: ${hostname}
+Page title: ${rawTitle}
 
-Here is the raw scraped data (JSON):
+Raw scraped data:
 ${JSON.stringify(raw, null, 2)}
 
-Fix any issues and return ONLY a valid JSON object with these exact keys. Rules:
-- suggestedId: lowercase letters/numbers only, no spaces (e.g. "norahouse", "olara")
-- suggestedName: proper building name only (e.g. "Nora House", not "Nora House | Luxury Condos in West Palm Beach")
-- tagline: short marketing tagline if found, otherwise null
-- address: clean street address only, no phone numbers prepended (e.g. "955 N Railroad Avenue, Suite B, West Palm Beach, FL 33401")
-- phone/phone2: format as "561.XXX.XXXX" or null
-- email: valid email or null
-- instagram: full Instagram URL or null
-- website: domain only e.g. "norahouse.com"
-- status: must be exactly one of: "Pre-Construction / Sales Launched", "Under Construction", "Completed"
-- salesLaunch: e.g. "January 2024" or null
-- estimatedDelivery: e.g. "Q1 2028" or null
-- developer: clean name only (e.g. "The Ronto Group", not "The Ronto Group assures residents...")
-- architect: clean firm name only (e.g. "Swedroe Architecture", not partial words like "ural heritage")
-- interiorDesigner: clean firm name only or null
-- totalUnits: integer or null
-- totalFloors: integer or null
-- priceRange: formatted range e.g. "$1.5M – $6M+" or null
-- priceFrom: number in dollars e.g. 1500000 or null
-- unitSizeRange: e.g. "1,400 – 6,700 SF" or null
-- bedrooms: e.g. "2–4 Bedrooms" or null
-- constructionStart: when groundbreaking/construction started e.g. "March 2024", "Q2 2025" or null
-- constructionLoan: financing amount and lender if mentioned e.g. "$380M — GoldenTree Asset Management" or null
-- management: building management company if mentioned e.g. "Related Management" or null
-- salesBroker: exclusive sales brokerage if mentioned or null
-- contractor: general contractor if mentioned or null
-- landscape: landscape architect or firm if mentioned or null
-- leedCertified: any sustainability certification e.g. "LEED Gold", "WELL Gold" or null
-- locationNote: brief neighborhood/location description e.g. "NORA District, North Flagler Drive, West Palm Beach" or null
-- views: views from residences e.g. "Intracoastal Waterway, Atlantic Ocean, City Skyline" or null
-- parking: parking details e.g. "Private garage, 2 spaces per unit, EV charging" or null
-- keyFacts: array of 6-8 compelling bullet point strings about this property — unique selling points, notable features, facts from press releases, blog posts, or any page on the site
+Return ONLY a valid JSON object with these fields cleaned and validated:
 
-IMPORTANT: Scan ALL text including press releases, news, blog posts, and construction update pages for fields like constructionStart, management, contractor, and keyFacts. These are often only mentioned in press coverage or update posts.
+BUILDING NAME — most critical field:
+- suggestedName: The REAL building name derived from domain '${hostname}' and title '${rawTitle}'.
+  'southflaglerhouse.com' = 'South Flagler House'. 'norahouse.com' = 'Nora House'. 'olara.com' = 'Olara'.
+  Remove: luxury, condos, residences, west palm, florida, official, ultra, coming soon.
+  NEVER return a single generic word like 'Ultra' or 'Luxury' as the building name.
+- suggestedId: suggestedName lowercased alphanumeric only. 'South Flagler House' = 'southflaglerhouse'
 
-Return ONLY the JSON object, no explanation, no markdown backticks.`
+CONTACT:
+- address: Street address only, no phone numbers prepended
+- phone: Format as '561.XXX.XXXX' — convert any format. Null if missing.
+- phone2: Same format or null
+- email: Valid email or null
+- instagram: Full URL 'https://www.instagram.com/handle/' or null
+- website: Domain only e.g. 'southflaglerhouse.com'
+
+TIMELINE:
+- status: Exactly one of: 'Pre-Construction / Sales Launched', 'Under Construction', 'Completed'
+- salesLaunch: 'January 2024' format or null
+- estimatedDelivery: 'Q1 2028' format or null
+- constructionStart: 'March 2024' format or null
+
+TEAM (clean company names only, no trailing sentences):
+- developer: E.g. 'Related Ross (Stephen M. Ross)' — clean name only
+- architect: Firm name only or null if unsure
+- interiorDesigner: Firm name only or null
+- management: Building management company or null
+- salesBroker: Exclusive sales brokerage or null
+- contractor: General contractor or null
+- landscape: Landscape firm or null
+
+BUILDING: totalUnits (int), totalFloors (int), leedCertified (e.g. 'LEED Gold' or null)
+
+PRICING:
+- priceRange: E.g. '$1.5M – $6M+' or null
+- priceFrom: Number e.g. 1500000 or null
+- unitSizeRange: E.g. '1,355 – 6,700 SF' or null
+- bedrooms: E.g. '2–4 Bedrooms' or null
+
+OTHER:
+- tagline: Short marketing tagline or null
+- constructionLoan: E.g. '$380M — GoldenTree Asset Management' or null
+- locationNote: Neighborhood/location description or null
+- views: E.g. 'Intracoastal, Atlantic Ocean, City Skyline' or null
+- parking: Parking details or null
+- keyFacts: Array of 6-8 compelling bullet strings from anywhere on the site including press/blog
+
+Return ONLY the JSON object. No explanation. No markdown backticks.`
           }]
         })
       });
