@@ -36,7 +36,8 @@ function extractImages(html, base) {
     if (map.has(url)) continue;
     const lower = (url + alt).toLowerCase();
     let cat = 'Exterior';
-    if (/pool|amenity|gym|fitness|spa|yoga|lounge|rooftop|bowling|pickleball|wellness/.test(lower)) cat = 'Amenities';
+    if (/floor.?plan|floorplan|layout|unit.?plan|residence.plan/i.test(lower)) cat = 'Floor Plans';
+    else if (/pool|amenity|gym|fitness|spa|yoga|lounge|rooftop|bowling|pickleball|wellness/.test(lower)) cat = 'Amenities';
     else if (/living|kitchen|bedroom|bath|interior|residence|terrace|balcon/.test(lower)) cat = 'Residences';
     else if (/view|aerial|intracoastal|ocean|skyline/.test(lower)) cat = 'Views';
     else if (/lobby|arrival|entrance/.test(lower)) cat = 'Arrival';
