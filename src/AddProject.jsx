@@ -1,948 +1,580 @@
-import { useState } from "react";
+// src/AddProject.jsx — Add New Building wizard
+import { useState, useRef } from "react";
 
 const T = {
   bg: "#ffffff", bgAlt: "#f7f7f7", bgCard: "#f9f9f9",
   border: "#e5e5e5", borderStrong: "#d0d0d0",
   text: "#111111", textSub: "#555555", textMuted: "#999999",
-  accent: "#111111", accentLight: "#f0f0f0",
+  textInverse: "#ffffff",
 };
 
-const STEPS = ["Method", "Scrape / Import", "Basic Info", "Team", "Building", "Pricing", "Gallery", "Floor Plans", "Review"];
+const STEPS = ["Gather", "Basic Info", "Team", "Building", "Pricing", "Gallery", "Floor Plans", "Review"];
 
-const EMPTY_PROJECT = {
-  id: "", name: "", subtitle: "", tagline: "",
-  address: "", phone: "", phone2: "", email: "", website: "", salesGallery: "", instagram: "",
-  status: "Pre-Construction / Sales Launched",
-  salesLaunch: "", estimatedDelivery: "", constructionStart: "", constructionLoan: "",
-  developer: "", architect: "", architectOfRecord: "", interiorDesigner: "",
-  landscape: "", salesBroker: "", management: "", contractor: "",
-  totalUnits: "", totalFloors: "", towers: "", residencesPerFloor: "",
-  siteSF: "", amenitiesSF: "", leedCertified: "",
-  priceRange: "", priceFrom: "", priceTo: "", unitSizeRange: "", bedrooms: "",
-  views: "", parking: "", depositStructure: "",
-  locationNote: "",
-  accentColor: "#2D9FBF",
-  renderings: [], floorPlanImages: [], brokerDocs: [],
-  amenities: [], floorPlans: [], keyFacts: [],
+const EMPTY = {
+  suggestedId: "", suggestedName: "", name: "", subtitle: "", tagline: "", accentColor: "#2D9FBF",
+  status: "Pre-Construction / Sales Launched", salesLaunch: "", estimatedDelivery: "", constructionStart: "",
+  constructionLoan: "", address: "", salesGallery: "", phone: "", phone2: "", email: "", website: "",
+  instagram: "", developer: "", architect: "", interiorDesigner: "", landscape: "", salesBroker: "",
+  management: "", contractor: "", totalUnits: "", totalFloors: "", towers: "", residencesPerFloor: "",
+  siteSF: "", amenitiesSF: "", leedCertified: "", priceRange: "", priceFrom: "", unitSizeRange: "",
+  bedrooms: "", views: "", parking: "", locationNote: "", keyFacts: [], amenities: [],
+  renderings: [], floorPlanImages: [], floorPlans: [], brokerDocs: [],
 };
 
-function StepIndicator({ current, total }) {
+function deepMerge(base, updates) {
+  const out = { ...base };
+  for (const [k, v] of Object.entries(updates || {})) {
+    if (v === null || v === undefined || v === "") continue;
+    if (Array.isArray(v) && v.length > 0) { out[k] = v; continue; }
+    if (Array.isArray(v)) continue;
+    if (typeof v === "object") { out[k] = { ...(base[k] || {}), ...v }; continue; }
+    out[k] = v;
+  }
+  return out;
+}
+
+// ── Step indicator ─────────────────────────────────────────────────────────
+function StepBar({ step }) {
   return (
-    <div style={{ display: "flex", gap: 6, marginBottom: 32, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 28 }}>
       {STEPS.map((s, i) => (
-        <div key={i} style={{
+        <span key={s} style={{
           padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-          background: i === current ? T.accent : i < current ? "#e8f5e9" : T.bgAlt,
-          color: i === current ? "#fff" : i < current ? "#2e7d32" : T.textMuted,
-          border: `1px solid ${i === current ? T.accent : i < current ? "#a5d6a7" : T.border}`,
-          letterSpacing: "0.04em", textTransform: "uppercase",
-        }}>{i < current ? "✓ " : ""}{s}</div>
+          letterSpacing: "0.06em", textTransform: "uppercase",
+          background: i < step ? "#111" : i === step ? "#2D9FBF" : T.bgAlt,
+          color: i <= step ? "#fff" : T.textMuted,
+          border: `1px solid ${i < step ? "#111" : i === step ? "#2D9FBF" : T.border}`,
+        }}>{i < step ? "✓ " : ""}{s}</span>
       ))}
     </div>
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = "text", half }) {
+// ── Field helpers ──────────────────────────────────────────────────────────
+function Field({ label, value, onChange, placeholder, type = "text", hint }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: half ? "1 1 45%" : "1 1 100%" }}>
-      <label style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{label}</label>
-      <input
-        type={type}
-        value={value || ""}
-        onChange={e => onChange(e.target.value)}
-        placeholder={placeholder}
-        style={{
-          padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`,
-          fontSize: 13, color: T.text, background: T.bg, outline: "none",
-          fontFamily: "inherit",
-        }}
-        onFocus={e => e.target.style.borderColor = T.accent}
-        onBlur={e => e.target.style.borderColor = T.border}
-      />
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>
+      <input type={type} value={value || ""} placeholder={placeholder || ""} onChange={e => onChange(e.target.value)}
+        style={{ padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 14, color: T.text, background: T.bg, outline: "none", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }} />
+      {hint && <div style={{ fontSize: 11, color: T.textMuted }}>{hint}</div>}
     </div>
   );
 }
 
 function Select({ label, value, onChange, options }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5, flex: "1 1 100%" }}>
-      <label style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{label}</label>
-      <select
-        value={value || ""}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`,
-          fontSize: 13, color: T.text, background: T.bg, outline: "none",
-          fontFamily: "inherit", cursor: "pointer",
-        }}
-      >
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <label style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</label>
+      <select value={value || ""} onChange={e => onChange(e.target.value)}
+        style={{ padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 14, color: T.text, background: T.bg, outline: "none", fontFamily: "inherit" }}>
         {options.map(o => <option key={o} value={o}>{o}</option>)}
       </select>
     </div>
   );
 }
 
-// ── Step 0: Choose method ─────────────────────────────────────────────────────
-function StepMethod({ onChoose }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <h2 style={{ margin: "0 0 8px", fontSize: 22, fontWeight: 300, fontFamily: "Georgia, serif" }}>Add a New Building</h2>
-      <p style={{ margin: "0 0 24px", color: T.textSub, fontSize: 14 }}>How would you like to start?</p>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {[
-          { icon: "🔍", title: "Scrape a Website", desc: "Enter the project's URL — we'll extract images, contact info, and PDFs automatically.", value: "scrape" },
-          { icon: "✏️", title: "Manual Entry", desc: "Fill out the form step by step with all the building details.", value: "manual" },
-        ].map(opt => (
-          <div key={opt.value} onClick={() => onChoose(opt.value)}
-            style={{
-              padding: 24, borderRadius: 10, border: `1px solid ${T.border}`,
-              cursor: "pointer", background: T.bgCard,
-              transition: "all 0.15s",
-            }}
-            onMouseOver={e => { e.currentTarget.style.borderColor = T.accent; e.currentTarget.style.background = T.bg; }}
-            onMouseOut={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.background = T.bgCard; }}
-          >
-            <div style={{ fontSize: 28, marginBottom: 12 }}>{opt.icon}</div>
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 6 }}>{opt.title}</div>
-            <div style={{ fontSize: 13, color: T.textSub, lineHeight: 1.5 }}>{opt.desc}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function Grid({ children }) {
+  return <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>{children}</div>;
 }
 
-// ── Step 1: Scrape ────────────────────────────────────────────────────────────
-function StepScrape({ project, setProject, method, onNext }) {
-  const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [selectedImages, setSelectedImages] = useState(new Set());
-  const [selectedPdfs, setSelectedPdfs] = useState(new Set());
-  const [uploadedPdfs, setUploadedPdfs] = useState([]);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [pdfResults, setPdfResults] = useState([]);
+function SectionHead({ label }) {
+  return <div style={{ fontSize: 10, fontWeight: 800, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.1em", paddingTop: 20, paddingBottom: 6, borderBottom: `1px solid ${T.border}`, marginBottom: 4 }}>{label}</div>;
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
+export default function AddProject({ onComplete, onCancel }) {
+  const [step, setStep] = useState(0);
+  const [project, setProject] = useState({ ...EMPTY });
+
+  // Gather step state
+  const [siteUrl, setSiteUrl] = useState("");
+  const [driveUrl, setDriveUrl] = useState("");
+  const [directLinks, setDirectLinks] = useState([""]);
+  const [uploadedPdfs, setUploadedPdfs] = useState([]); // [{name, buffer}]
+  const [processing, setProcessing] = useState(false);
+  const [processingMsg, setProcessingMsg] = useState("");
+  const [gatherResults, setGatherResults] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const fileRef = useRef();
 
-  const scrape = async () => {
-    setLoading(true); setError(null); setResult(null);
-    try {
-      const res = await fetch('/api/research-building', {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setResult(data);
-      setSelectedImages(new Set(data.images.map((_, i) => i)));
-      setSelectedPdfs(new Set(data.pdfs.map((_, i) => i)));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
+  const set = (k, v) => setProject(p => ({ ...p, [k]: v }));
+  const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
+  const back = () => setStep(s => Math.max(s - 1, 0));
+
+  // ── PDF file handling ────────────────────────────────────────────────────
+  async function addPdfFiles(files) {
+    const newPdfs = [];
+    for (const file of Array.from(files)) {
+      if (!file.name.match(/\.(pdf)$/i)) continue;
+      const buf = await file.arrayBuffer();
+      newPdfs.push({ name: file.name, buffer: buf });
     }
-  };
-
-  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-  const processPdfs = async (files) => {
-    const pdfs = Array.from(files).filter(f => f.type === 'application/pdf' || f.name.endsWith('.pdf'));
-    if (!pdfs.length) return;
-    setPdfLoading(true);
-    const newResults = [];
-    for (const file of pdfs) {
-      try {
-        const base64 = await readFileAsBase64(file);
-        const res = await fetch("/api/extract-pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pdfBase64: base64,
-            filename: file.name,
-            existingData: result || null,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
-          newResults.push({ filename: file.name, extracted: data.extracted });
-          setUploadedPdfs(prev => [...prev, { name: file.name, size: file.size }]);
-        }
-      } catch (e) {
-        console.error('PDF error:', e);
-      }
-    }
-    setPdfResults(prev => [...prev, ...newResults]);
-    setPdfLoading(false);
-  };
-
-  const applyAndContinue = () => {
-    if (!result && !pdfResults.length) { onNext(); return; }
-    const imgs = (result?.images || []).filter((_, i) => selectedImages.has(i));
-    const renderings = imgs.map(img => ({ url: img.url, caption: img.caption, category: img.category }));
-    const brokerDocs = (result?.pdfs || [])
-      .filter((p, i) => selectedPdfs.has(i) && p.type === "brokerDoc")
-      .map(p => ({ name: p.name, thumb: null, pdf: p.url }));
-    const floorPlanImages = (result?.pdfs || [])
-      .filter((p, i) => selectedPdfs.has(i) && p.type === "floorplan")
-      .map(p => ({ name: p.name, thumb: null, pdf: p.url }));
-
-    // Merge all PDF extracted data — PDFs take priority for pricing/specs
-    let pdfMerged = {};
-    let pdfFloorPlans = [];
-    for (const pr of pdfResults) {
-      const e = pr.extracted;
-      // Merge scalar fields — later PDFs win
-      Object.keys(e).forEach(k => {
-        if (k !== 'floorPlans' && k !== 'keyFacts' && e[k] != null) pdfMerged[k] = e[k];
-      });
-      // Collect floor plans from PDFs
-      if (e.floorPlans?.length) pdfFloorPlans = [...pdfFloorPlans, ...e.floorPlans];
-      // Merge key facts
-      if (e.keyFacts?.length) pdfMerged.keyFacts = [...(pdfMerged.keyFacts || []), ...e.keyFacts];
-    }
-
-    setProject(prev => ({
-      ...prev,
-      // Web scrape data
-      id: pdfMerged.suggestedId || result?.suggestedId || prev.id,
-      name: pdfMerged.suggestedName || result?.suggestedName || prev.name,
-      tagline: result?.tagline || prev.tagline,
-      address: pdfMerged.address || result?.address || prev.address,
-      phone: pdfMerged.phone || result?.phone || prev.phone,
-      phone2: pdfMerged.phone2 || result?.phone2 || prev.phone2,
-      email: pdfMerged.email || result?.email || prev.email,
-      website: result?.website || prev.website,
-      instagram: result?.instagram || prev.instagram,
-      status: pdfMerged.status || result?.status || prev.status,
-      salesLaunch: pdfMerged.salesLaunch || result?.salesLaunch || prev.salesLaunch,
-      estimatedDelivery: pdfMerged.estimatedDelivery || result?.estimatedDelivery || prev.estimatedDelivery,
-      constructionStart: pdfMerged.constructionStart || result?.constructionStart || prev.constructionStart,
-      constructionLoan: pdfMerged.constructionLoan || result?.constructionLoan || prev.constructionLoan,
-      developer: pdfMerged.developer || result?.developer || prev.developer,
-      architect: pdfMerged.architect || result?.architect || prev.architect,
-      interiorDesigner: pdfMerged.interiorDesigner || result?.interiorDesigner || prev.interiorDesigner,
-      management: pdfMerged.management || result?.management || prev.management,
-      salesBroker: pdfMerged.salesBroker || result?.salesBroker || prev.salesBroker,
-      contractor: pdfMerged.contractor || result?.contractor || prev.contractor,
-      landscape: pdfMerged.landscape || result?.landscape || prev.landscape,
-      totalUnits: pdfMerged.totalUnits || result?.totalUnits || prev.totalUnits,
-      totalFloors: pdfMerged.totalFloors || result?.totalFloors || prev.totalFloors,
-      leedCertified: pdfMerged.leedCertified || result?.leedCertified || prev.leedCertified,
-      // PDF wins for pricing (more accurate from price sheets)
-      priceRange: pdfMerged.priceRange || result?.priceRange || prev.priceRange,
-      priceFrom: pdfMerged.priceFrom || result?.priceFrom || prev.priceFrom,
-      priceTo: pdfMerged.priceTo || prev.priceTo,
-      unitSizeRange: pdfMerged.unitSizeRange || result?.unitSizeRange || prev.unitSizeRange,
-      bedrooms: pdfMerged.bedrooms || result?.bedrooms || prev.bedrooms,
-      depositStructure: pdfMerged.depositStructure || prev.depositStructure,
-      amenitiesSF: pdfMerged.amenitiesSF || prev.amenitiesSF,
-      siteSF: pdfMerged.siteSF || prev.siteSF,
-      views: pdfMerged.views || result?.views || prev.views,
-      parking: pdfMerged.parking || result?.parking || prev.parking,
-      locationNote: pdfMerged.locationNote || result?.locationNote || prev.locationNote,
-      keyFacts: pdfMerged.keyFacts?.length ? pdfMerged.keyFacts : (result?.keyFacts?.length ? result.keyFacts : prev.keyFacts),
-      // Floor plans from PDFs
-      floorPlans: pdfFloorPlans.length ? pdfFloorPlans : prev.floorPlans,
-      renderings,
-      brokerDocs,
-      floorPlanImages,
-    }));
-    onNext();
-  };
-
-  if (method === "manual") {
-    return (
-      <div>
-        <h3 style={{ margin: "0 0 16px", fontWeight: 400, fontSize: 18 }}>Manual Entry</h3>
-        <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24 }}>Fill in the building details in the following steps. You can also paste a website URL to pre-fill some fields.</p>
-        <div style={{ display: "flex", gap: 12 }}>
-          <input value={url} onChange={e => setUrl(e.target.value)} placeholder="Optional: paste project website URL to pre-fill..."
-            style={{ flex: 1, padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
-          <button onClick={scrape} disabled={!url || loading}
-            style={{ padding: "9px 20px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-            {loading ? "Researching..." : "Research with AI"}
-          </button>
-        </div>
-        {error && <div style={{ marginTop: 12, color: "#c00", fontSize: 13 }}>Error: {error}</div>}
-        {result && <div style={{ marginTop: 12, color: "#2e7d32", fontSize: 13 }}>✓ Found {result.images.length} images and {result.pdfs.length} PDFs. They'll be pre-filled as you continue.</div>}
-        <button onClick={applyAndContinue} style={{ marginTop: 24, padding: "10px 28px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-          Continue →
-        </button>
-      </div>
-    );
+    setUploadedPdfs(prev => [...prev, ...newPdfs]);
   }
 
-  return (
+  // ── Gather & Research ────────────────────────────────────────────────────
+  async function handleResearch() {
+    const hasAnything = siteUrl || driveUrl || uploadedPdfs.length > 0 || directLinks.some(Boolean);
+    if (!hasAnything) { next(); return; }
+
+    setProcessing(true);
+    setGatherResults(null);
+    let merged = { ...project };
+    const log = [];
+
+    // 1. Research site URL with Claude AI
+    if (siteUrl.trim()) {
+      setProcessingMsg("🔍 Researching " + siteUrl + "...");
+      try {
+        const r = await fetch("/api/research-building", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: siteUrl.trim() }),
+        });
+        const data = await r.json();
+        if (data.project) {
+          merged = deepMerge(merged, data.project);
+          log.push("✓ Site researched — " + (data.project.suggestedName || siteUrl));
+        } else if (data.error) {
+          log.push("⚠ Site research: " + data.error);
+        }
+      } catch (e) { log.push("⚠ Site research error: " + e.message); }
+    }
+
+    // 2. Extract from uploaded PDFs
+    for (const pdf of uploadedPdfs) {
+      setProcessingMsg("📄 Extracting from " + pdf.name + "...");
+      try {
+        const r = await fetch("/api/upload-pdf", {
+          method: "POST",
+          headers: {
+            "x-building-id": merged.suggestedId || "new",
+            "x-doc-name": pdf.name.replace(/\.pdf$/i, ""),
+            "x-context": "building information sheet, pricing, floor plans, fact sheet",
+          },
+          body: pdf.buffer,
+        });
+        const data = await r.json();
+        if (data.extracted) {
+          merged = deepMerge(merged, data.extracted);
+          log.push("✓ PDF extracted: " + pdf.name);
+        }
+      } catch (e) { log.push("⚠ PDF error (" + pdf.name + "): " + e.message); }
+    }
+
+    // 3. Add direct links as broker docs
+    const validLinks = directLinks.filter(l => l.trim().startsWith("http"));
+    for (const link of validLinks) {
+      if (!merged.brokerDocs) merged.brokerDocs = [];
+      const name = decodeURIComponent(link.split("/").pop().split("?")[0]) || "Document";
+      merged.brokerDocs.push({ name, url: link, pdf: link });
+      log.push("✓ Link added: " + name);
+    }
+
+    // 4. Try Dropbox/Drive folder import
+    if (driveUrl.trim()) {
+      setProcessingMsg("📁 Importing from folder...");
+      try {
+        const r = await fetch("/api/dropbox-import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folderUrl: driveUrl.trim() }),
+        });
+        const data = await r.json();
+        if (data.count > 0) {
+          const imgItems = (data.images || []).map(f => ({ url: f.url, caption: f.name, category: "Exterior" }));
+          const pdfItems = (data.pdfs || []).map(f => ({ name: f.name, url: f.url, pdf: f.url }));
+          if (imgItems.length) merged.renderings = [...(merged.renderings || []), ...imgItems];
+          if (pdfItems.length) merged.brokerDocs = [...(merged.brokerDocs || []), ...pdfItems];
+          log.push("✓ Folder: " + data.count + " files imported");
+        } else {
+          log.push("⚠ Folder: no files found (check link is shared publicly)");
+        }
+      } catch (e) { log.push("⚠ Folder import error: " + e.message); }
+    }
+
+    // Ensure id is set
+    if (!merged.suggestedId && merged.suggestedName) {
+      merged.suggestedId = merged.suggestedName.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 20);
+    }
+
+    setProject(merged);
+    setGatherResults(log);
+    setProcessing(false);
+    // Don't auto-advance so user can see results
+  }
+
+  // ── Save to KV ────────────────────────────────────────────────────────────
+  async function handleSubmit() {
+    const bid = project.suggestedId || project.name?.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 20) || "building-" + Date.now();
+    const data = { ...project, id: bid };
+    try {
+      await fetch("/api/buildings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: bid, data }),
+      });
+    } catch (e) { console.warn("KV save:", e.message); }
+    onComplete({ ...data, id: bid });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 0: GATHER (unified input)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderGather = () => (
     <div>
-      <h3 style={{ margin: "0 0 8px", fontWeight: 400, fontSize: 18 }}>Scrape Project Website</h3>
-      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 20 }}>Enter the project's main URL. We'll scan it for images, PDFs, contact info, and pricing.</p>
-      <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
-        <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://projectwebsite.com"
-          style={{ flex: 1, padding: "10px 14px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 14, fontFamily: "inherit" }} />
-        <button onClick={scrape} disabled={!url || loading}
-          style={{ padding: "10px 24px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, opacity: (!url || loading) ? 0.5 : 1 }}>
-          {loading ? "Researching..." : "🔍 Scan"}
-        </button>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 6, color: T.text }}>Gather Building Information</h2>
+      <p style={{ fontSize: 14, color: T.textSub, marginBottom: 24, lineHeight: 1.5 }}>
+        Add any combination of inputs below — Claude will use everything you provide to populate the building profile automatically.
+        All fields are optional.
+      </p>
+
+      {/* 1. Website URL */}
+      <div style={{ marginBottom: 16, padding: "16px 20px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>🌐</span> Project Website
+        </div>
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Claude will scan the site for pricing, team info, images, and specs.</div>
+        <input
+          type="text"
+          value={siteUrl}
+          onChange={e => setSiteUrl(e.target.value)}
+          placeholder="https://projectwebsite.com"
+          style={{ width: "100%", padding: "10px 12px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", background: T.bg, color: T.text }}
+        />
       </div>
-      {error && <div style={{ padding: "10px 14px", borderRadius: 6, background: "#fff5f5", border: "1px solid #ffcccc", color: "#c00", fontSize: 13 }}>Error: {error}</div>}
 
-      {result && (
-        <div>
-          <div style={{ padding: "12px 16px", borderRadius: 6, background: "#f0fff4", border: "1px solid #a5d6a7", marginBottom: 20, fontSize: 13, color: "#2e7d32" }}>
-            ✓ Found <strong>{result.images.length}</strong> images and <strong>{result.pdfs.length}</strong> PDFs. Review and select below.
-          </div>
-
-          {/* ── Gallery Images ─────────────────────────────────── */}
-          {result.images.filter(img => img.category !== "Floor Plans").length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                Gallery Images ({result.images.filter(img => img.category !== "Floor Plans").length})
-                <button onClick={() => setSelectedImages(new Set(result.images.map((_, i) => i)))}
-                  style={{ marginLeft: 12, fontSize: 11, color: T.accent, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Select all</button>
-                <button onClick={() => setSelectedImages(new Set())}
-                  style={{ marginLeft: 8, fontSize: 11, color: T.textMuted, background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>Clear</button>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8, maxHeight: 300, overflowY: "auto" }}>
-                {result.images.map((img, i) => img.category === "Floor Plans" ? null : (
-                  <div key={i} onClick={() => {
-                    const s = new Set(selectedImages);
-                    s.has(i) ? s.delete(i) : s.add(i);
-                    setSelectedImages(s);
-                  }} style={{
-                    position: "relative", aspectRatio: "4/3", borderRadius: 6, overflow: "hidden",
-                    border: `2px solid ${selectedImages.has(i) ? "#2e7d32" : T.border}`,
-                    cursor: "pointer", background: T.bgAlt,
-                  }}>
-                    <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      onError={e => e.target.style.display = "none"} />
-                    {selectedImages.has(i) && (
-                      <div style={{ position: "absolute", top: 4, right: 4, background: "#2e7d32", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>✓</div>
-                    )}
-                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.6)", padding: "2px 4px", fontSize: 9, color: "#fff" }}>{img.category}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── Floor Plan Images Preview ───────────────────────── */}
-          {result.images.filter(img => img.category === "Floor Plans").length > 0 && (
-            <div style={{ marginBottom: 20, padding: 14, borderRadius: 8, border: `1px solid #b3d4f5`, background: "#f0f7ff" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#1a5fa8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                📐 Floor Plans Found ({result.images.filter(img => img.category === "Floor Plans").length})
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
-                {result.images.map((img, i) => img.category !== "Floor Plans" ? null : (
-                  <div key={i} onClick={() => {
-                    const s = new Set(selectedImages);
-                    s.has(i) ? s.delete(i) : s.add(i);
-                    setSelectedImages(s);
-                  }} style={{
-                    position: "relative", aspectRatio: "3/4", borderRadius: 6, overflow: "hidden",
-                    border: `2px solid ${selectedImages.has(i) ? "#1a5fa8" : "#b3d4f5"}`,
-                    cursor: "pointer", background: "#fff",
-                  }}>
-                    <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "contain", padding: 4 }}
-                      onError={e => e.target.style.display = "none"} />
-                    {selectedImages.has(i) && (
-                      <div style={{ position: "absolute", top: 4, right: 4, background: "#1a5fa8", color: "#fff", borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>✓</div>
-                    )}
-                    {img.caption && <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.6)", padding: "2px 4px", fontSize: 9, color: "#fff" }}>{img.caption}</div>}
-                  </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 11, color: "#1a5fa8", marginTop: 8 }}>These will be added to the Floor Plans section automatically.</div>
-            </div>
-          )}
-
-          {/* ── Floor Plan PDFs ─────────────────────────────────── */}
-          {result.pdfs.filter(p => p.type === "floorplan").length > 0 && (
-            <div style={{ marginBottom: 16, padding: 14, borderRadius: 8, border: `1px solid #b3d4f5`, background: "#f0f7ff" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#1a5fa8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                📐 Floor Plan PDFs ({result.pdfs.filter(p => p.type === "floorplan").length})
-              </div>
-              {result.pdfs.map((pdf, i) => pdf.type !== "floorplan" ? null : (
-                <div key={i} onClick={() => {
-                  const s = new Set(selectedPdfs);
-                  s.has(i) ? s.delete(i) : s.add(i);
-                  setSelectedPdfs(s);
-                }} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 6,
-                  border: `1px solid ${selectedPdfs.has(i) ? "#1a5fa8" : "#b3d4f5"}`,
-                  background: selectedPdfs.has(i) ? "#ddeeff" : "#fff", cursor: "pointer", marginBottom: 6,
-                }}>
-                  <span style={{ fontSize: 18 }}>📐</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{pdf.name}</div>
-                    <div style={{ fontSize: 11, color: "#1a5fa8" }}>Floor Plan PDF</div>
-                  </div>
-                  {selectedPdfs.has(i) && <span style={{ color: "#1a5fa8", fontWeight: 700 }}>✓</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* ── Broker Docs ─────────────────────────────────────── */}
-          {result.pdfs.filter(p => p.type === "brokerDoc").length > 0 && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 10 }}>
-                Broker Docs ({result.pdfs.filter(p => p.type === "brokerDoc").length})
-              </div>
-              {result.pdfs.map((pdf, i) => pdf.type !== "brokerDoc" ? null : (
-                <div key={i} onClick={() => {
-                  const s = new Set(selectedPdfs);
-                  s.has(i) ? s.delete(i) : s.add(i);
-                  setSelectedPdfs(s);
-                }} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "8px 12px", borderRadius: 6,
-                  border: `1px solid ${selectedPdfs.has(i) ? "#2e7d32" : T.border}`,
-                  background: selectedPdfs.has(i) ? "#f0fff4" : T.bg, cursor: "pointer", marginBottom: 6,
-                }}>
-                  <span style={{ fontSize: 18 }}>📄</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{pdf.name}</div>
-                    <div style={{ fontSize: 11, color: T.textMuted }}>Broker Document</div>
-                  </div>
-                  {selectedPdfs.has(i) && <span style={{ color: "#2e7d32", fontWeight: 700 }}>✓</span>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          <button onClick={applyAndContinue}
-            style={{ padding: "11px 28px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-            Use Selected & Continue →
-          </button>
+      {/* 2. PDF Upload */}
+      <div style={{ marginBottom: 16, padding: "16px 20px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>📄</span> Upload PDFs
         </div>
-      )}
-
-      {/* PDF Upload — always visible */}
-      <div style={{ marginTop: result ? 24 : 0, paddingTop: result ? 24 : 0, borderTop: result ? `1px solid ${T.border}` : 'none' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>
-          📄         {/* Dropbox / Google Drive folder import */}
-        <div style={{ marginTop: 20, paddingTop: 18, borderTop: "1px solid #e5e5e5" }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#111", marginBottom: 4 }}>
-            📁 Import from Dropbox or Google Drive
-          </div>
-          <div style={{ fontSize: 12, color: "#999", marginBottom: 10 }}>
-            Paste a shared folder link to import all PDFs and images automatically.
-          </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <input
-              type="text"
-              placeholder="https://www.dropbox.com/sh/... or Google Drive folder URL"
-              id="mlg-folder-url"
-              style={{ flex: 1, minWidth: 200, padding: "9px 12px", border: "1px solid #e5e5e5", borderRadius: 6, fontSize: 13, fontFamily: "inherit", outline: "none" }}
-            />
-            <button
-              type="button"
-              onClick={async () => {
-                const input = document.getElementById("mlg-folder-url");
-                const folderUrl = input && input.value.trim();
-                if (!folderUrl) return;
-                try {
-                  const r = await fetch("/api/dropbox-import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ folderUrl }) });
-                  const data = await r.json();
-                  if (data.error) { alert("Error: " + data.error); return; }
-                  alert("Found " + data.count + " files (" + (data.pdfs && data.pdfs.length || 0) + " PDFs, " + (data.images && data.images.length || 0) + " images).");
-                } catch(e) { alert("Error: " + e.message); }
-              }}
-              style={{ padding: "9px 16px", background: "#111", border: "none", borderRadius: 6, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
-            >
-              Import Folder
-            </button>
-          </div>
-        </div>
-        {/* PDF Upload section */}Upload PDFs for AI Extraction
-        </div>
-        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 12 }}>
-          Upload price sheets, fact sheets, floor plan PDFs — Claude will extract pricing, floor plans, team info, and more automatically.
-        </div>
-
-        {/* Drop zone */}
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Price sheets, fact sheets, floor plan PDFs — Claude will extract all structured data.</div>
         <div
+          onClick={() => fileRef.current?.click()}
           onDragOver={e => { e.preventDefault(); setDragOver(true); }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={e => { e.preventDefault(); setDragOver(false); processPdfs(e.dataTransfer.files); }}
-          onClick={() => document.getElementById('pdf-upload-input').click()}
+          onDrop={e => { e.preventDefault(); setDragOver(false); addPdfFiles(e.dataTransfer.files); }}
           style={{
-            border: `2px dashed ${dragOver ? T.accent : T.borderStrong}`,
-            borderRadius: 8, padding: "24px 16px", textAlign: "center",
-            cursor: "pointer", background: dragOver ? T.accentLight : T.bgAlt,
-            transition: "all 0.15s", marginBottom: 12,
-          }}>
-          <div style={{ fontSize: 28, marginBottom: 6 }}>📂</div>
-          <div style={{ fontSize: 13, color: T.textSub }}>
-            {pdfLoading ? "⏳ Extracting data from PDF..." : "Drag & drop PDFs here, or click to browse"}
-          </div>
+            border: `2px dashed ${dragOver ? "#2D9FBF" : T.border}`,
+            borderRadius: 8, padding: "20px 16px",
+            textAlign: "center", cursor: "pointer",
+            background: dragOver ? "#f0f9ff" : T.bg,
+            transition: "all 0.15s",
+          }}
+        >
+          <div style={{ fontSize: 28, marginBottom: 6 }}>📁</div>
+          <div style={{ fontSize: 13, color: T.textSub }}>Drag & drop PDFs here, or click to browse</div>
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>Price sheets, fact sheets, floor plan PDFs</div>
-          <input
-            id="pdf-upload-input"
-            type="file"
-            accept=".pdf,application/pdf"
-            multiple
-            style={{ display: "none" }}
-            onChange={e => { processPdfs(e.target.files); e.target.value = ''; }}
-          />
+          <input ref={fileRef} type="file" accept=".pdf" multiple style={{ display: "none" }} onChange={e => addPdfFiles(e.target.files)} />
         </div>
-
-        {/* Uploaded PDFs summary */}
-        {pdfResults.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {pdfResults.map((pr, i) => (
-              <div key={i} style={{ padding: "10px 14px", borderRadius: 6, background: "#f0fff4", border: "1px solid #a5d6a7", fontSize: 13 }}>
-                <div style={{ fontWeight: 700, color: "#2e7d32", marginBottom: 4 }}>✓ {pr.filename}</div>
-                <div style={{ color: T.textSub, fontSize: 12 }}>
-                  Extracted: {Object.keys(pr.extracted).filter(k => pr.extracted[k] != null && k !== 'floorPlans' && k !== 'keyFacts').join(', ')}
-                  {pr.extracted.floorPlans?.length ? ` + ${pr.extracted.floorPlans.length} floor plans` : ''}
-                </div>
+        {uploadedPdfs.length > 0 && (
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+            {uploadedPdfs.map((pdf, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "#e8f5e9", borderRadius: 6, fontSize: 13 }}>
+                <span style={{ color: "#2e7d32" }}>📄 {pdf.name}</span>
+                <button onClick={() => setUploadedPdfs(prev => prev.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "#999", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Continue button when no web scrape but PDFs uploaded */}
-      {!result && pdfResults.length > 0 && (
-        <button onClick={applyAndContinue} style={{ marginTop: 16, padding: "11px 28px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-          Use PDF Data & Continue →
-        </button>
+      {/* 3. Direct PDF/Doc Links */}
+      <div style={{ marginBottom: 16, padding: "16px 20px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>🔗</span> Direct Document Links
+        </div>
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Paste direct URLs to PDFs or documents (e.g. from Dropbox, Box, or a CDN).</div>
+        {directLinks.map((link, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <input
+              type="text"
+              value={link}
+              onChange={e => setDirectLinks(prev => prev.map((l, j) => j === i ? e.target.value : l))}
+              placeholder="https://example.com/document.pdf"
+              style={{ flex: 1, padding: "9px 12px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: "inherit", outline: "none", background: T.bg, color: T.text }}
+            />
+            {directLinks.length > 1 && (
+              <button onClick={() => setDirectLinks(prev => prev.filter((_, j) => j !== i))} style={{ padding: "9px 12px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 6, cursor: "pointer", color: T.textSub, fontSize: 16 }}>×</button>
+            )}
+          </div>
+        ))}
+        <button onClick={() => setDirectLinks(prev => [...prev, ""])} style={{ fontSize: 12, color: "#2D9FBF", background: "none", border: "none", cursor: "pointer", padding: "4px 0", fontWeight: 600 }}>+ Add another link</button>
+      </div>
+
+      {/* 4. Dropbox / Google Drive folder */}
+      <div style={{ marginBottom: 24, padding: "16px 20px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 4, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>📂</span> Dropbox or Google Drive Folder
+        </div>
+        <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>Paste a shared folder link to import all PDFs and images automatically.</div>
+        <input
+          type="text"
+          value={driveUrl}
+          onChange={e => setDriveUrl(e.target.value)}
+          placeholder="https://www.dropbox.com/sh/... or Google Drive folder URL"
+          style={{ width: "100%", padding: "10px 12px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", background: T.bg, color: T.text }}
+        />
+      </div>
+
+      {/* Results from previous research */}
+      {gatherResults && (
+        <div style={{ marginBottom: 20, padding: "14px 16px", background: "#f8fff8", border: "1px solid #c8e6c9", borderRadius: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#2e7d32", marginBottom: 8 }}>Research Results</div>
+          {gatherResults.map((msg, i) => (
+            <div key={i} style={{ fontSize: 12, color: msg.startsWith("⚠") ? "#e65100" : "#333", marginBottom: 4 }}>{msg}</div>
+          ))}
+          <div style={{ marginTop: 12, fontSize: 13, color: T.textSub }}>
+            Review the populated fields in the next steps. You can edit anything.
+          </div>
+        </div>
       )}
 
-      {!result && !pdfResults.length && !loading && (
-        <button onClick={onNext} style={{ marginTop: 16, padding: "9px 20px", borderRadius: 6, background: T.bgAlt, color: T.textSub, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 13 }}>
+      {/* Processing state */}
+      {processing && (
+        <div style={{ marginBottom: 20, padding: "14px 16px", background: "#e3f2fd", border: "1px solid #90caf9", borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 20, height: 20, border: "2px solid #90caf9", borderTopColor: "#1565c0", borderRadius: "50%", animation: "spin 1s linear infinite", flexShrink: 0 }} />
+          <div style={{ fontSize: 13, color: "#1565c0" }}>{processingMsg || "Processing..."}</div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <button
+          onClick={handleResearch}
+          disabled={processing}
+          style={{ flex: 1, minWidth: 200, padding: "14px 24px", background: processing ? "#999" : "#111", border: "none", borderRadius: 8, color: "#fff", fontSize: 15, fontWeight: 700, cursor: processing ? "default" : "pointer", minHeight: 48 }}
+        >
+          {processing ? processingMsg || "Processing..." : gatherResults ? "Research Again →" : "Research with AI →"}
+        </button>
+        {gatherResults && (
+          <button onClick={next} style={{ padding: "14px 24px", background: "#2D9FBF", border: "none", borderRadius: 8, color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer", minHeight: 48 }}>
+            Continue →
+          </button>
+        )}
+        <button onClick={next} style={{ padding: "14px 20px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 8, color: T.textSub, fontSize: 13, cursor: "pointer", minHeight: 48 }}>
           Skip, fill manually →
         </button>
-      )}
-    </div>
-  );
-}
-
-// ── Step 2: Basic Info ────────────────────────────────────────────────────────
-function StepBasic({ project, setProject }) {
-  const set = key => val => setProject(p => ({ ...p, [key]: val }));
-  return (
-    <div>
-      <h3 style={{ margin: "0 0 20px", fontWeight: 400, fontSize: 18 }}>Basic Information</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Building ID (no spaces)" value={project.id} onChange={val => setProject(p => ({ ...p, id: val.toLowerCase().replace(/[^a-z0-9]/g, '') }))} placeholder="e.g. olara" half />
-          <Field label="Building Name" value={project.name} onChange={set("name")} placeholder="e.g. Olara" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Subtitle" value={project.subtitle} onChange={set("subtitle")} placeholder="e.g. North Flagler" half />
-          <Field label="Tagline" value={project.tagline} onChange={set("tagline")} placeholder="Short marketing tagline" half />
-        </div>
-        <Field label="Address" value={project.address} onChange={set("address")} placeholder="Full street address" />
-        <Field label="Location Note" value={project.locationNote} onChange={set("locationNote")} placeholder="e.g. North Flagler Drive waterfront — 4-acre site" />
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Phone" value={project.phone} onChange={set("phone")} placeholder="561.000.0000" half />
-          <Field label="Phone 2" value={project.phone2} onChange={set("phone2")} placeholder="Optional" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Email" value={project.email} onChange={set("email")} placeholder="info@building.com" half />
-          <Field label="Website" value={project.website} onChange={set("website")} placeholder="buildingwebsite.com" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Sales Gallery Address" value={project.salesGallery} onChange={set("salesGallery")} placeholder="Gallery address" half />
-          <Field label="Instagram URL" value={project.instagram} onChange={set("instagram")} placeholder="https://instagram.com/..." half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Select label="Status" value={project.status} onChange={set("status")} options={["Pre-Construction / Sales Launched", "Under Construction", "Completed"]} />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Sales Launch" value={project.salesLaunch} onChange={set("salesLaunch")} placeholder="e.g. January 2024" half />
-          <Field label="Estimated Delivery" value={project.estimatedDelivery} onChange={set("estimatedDelivery")} placeholder="e.g. Q1 2028" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Construction Start" value={project.constructionStart} onChange={set("constructionStart")} placeholder="e.g. March 2024" half />
-          <Field label="Construction Loan" value={project.constructionLoan} onChange={set("constructionLoan")} placeholder="e.g. $380M — Lender Name" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <label style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Accent Color</label>
-            <input type="color" value={project.accentColor || "#2D9FBF"} onChange={e => setProject(p => ({ ...p, accentColor: e.target.value }))}
-              style={{ width: 60, height: 36, borderRadius: 6, border: `1px solid ${T.border}`, cursor: "pointer", padding: 2 }} />
-          </div>
-          <div style={{ fontSize: 13, color: T.textSub, marginTop: 18 }}>Used for nav tab underline, price display, and accent details</div>
-        </div>
       </div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
-}
 
-// ── Step 3: Team ──────────────────────────────────────────────────────────────
-function StepTeam({ project, setProject }) {
-  const set = key => val => setProject(p => ({ ...p, [key]: val }));
-  return (
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 1: BASIC INFO
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderBasicInfo = () => (
     <div>
-      <h3 style={{ margin: "0 0 20px", fontWeight: 400, fontSize: 18 }}>Development Team</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {[
-          ["developer", "Developer", "e.g. Kolter Urban + Perko Development Partners"],
-          ["architect", "Architect", "e.g. Arquitectonica"],
-          ["architectOfRecord", "Architect of Record", "Optional"],
-          ["interiorDesigner", "Interior Designer", "e.g. Gabellini Sheppard Associates"],
-          ["landscape", "Landscape", "e.g. EDSA"],
-          ["salesBroker", "Sales Broker", "e.g. Compass (exclusive)"],
-          ["management", "Management", "e.g. Arch Amenities"],
-          ["contractor", "Contractor", "Optional"],
-        ].map(([key, label, placeholder]) => (
-          <Field key={key} label={label} value={project[key]} onChange={set(key)} placeholder={placeholder} />
-        ))}
-      </div>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 20, color: T.text }}>Basic Information</h2>
+      <Grid>
+        <Field label="Building Name *" value={project.suggestedName} onChange={v => set("suggestedName", v)} placeholder="Maison d'Or" />
+        <Field label="Building ID (no spaces)" value={project.suggestedId} onChange={v => set("suggestedId", v.toLowerCase().replace(/[^a-z0-9-]/g, ""))} placeholder="maisondor" hint="Used internally — lowercase, no spaces" />
+        <Field label="Subtitle" value={project.subtitle} onChange={v => set("subtitle", v)} placeholder="South Flagler" />
+        <Field label="Tagline" value={project.tagline} onChange={v => set("tagline", v)} placeholder="House of Gold — Ultra-Luxury Boutique Residences" />
+        <Field label="Accent Color" value={project.accentColor} onChange={v => set("accentColor", v)} type="color" />
+        <Select label="Status" value={project.status} onChange={v => set("status", v)} options={["Pre-Construction / Sales Launched", "Under Construction", "Completed"]} />
+      </Grid>
+      <SectionHead label="Timeline" />
+      <Grid>
+        <Field label="Sales Launch" value={project.salesLaunch} onChange={v => set("salesLaunch", v)} placeholder="January 2026" />
+        <Field label="Est. Delivery" value={project.estimatedDelivery} onChange={v => set("estimatedDelivery", v)} placeholder="Q4 2027" />
+        <Field label="Construction Start" value={project.constructionStart} onChange={v => set("constructionStart", v)} placeholder="April 2025" />
+        <Field label="Construction Loan" value={project.constructionLoan} onChange={v => set("constructionLoan", v)} placeholder="$380M — Lender Name" />
+      </Grid>
+      <SectionHead label="Contact" />
+      <Grid>
+        <Field label="Address" value={project.address} onChange={v => set("address", v)} />
+        <Field label="Sales Gallery" value={project.salesGallery} onChange={v => set("salesGallery", v)} />
+        <Field label="Phone" value={project.phone} onChange={v => set("phone", v)} placeholder="561.XXX.XXXX" />
+        <Field label="Phone 2" value={project.phone2} onChange={v => set("phone2", v)} />
+        <Field label="Email" value={project.email} onChange={v => set("email", v)} />
+        <Field label="Website" value={project.website} onChange={v => set("website", v)} placeholder="domain.com" />
+        <Field label="Instagram URL" value={project.instagram} onChange={v => set("instagram", v)} />
+        <Field label="Location Note" value={project.locationNote} onChange={v => set("locationNote", v)} placeholder="Across Intracoastal from Mar-a-Lago" />
+      </Grid>
     </div>
   );
-}
 
-// ── Step 4: Building Specs ────────────────────────────────────────────────────
-function StepBuilding({ project, setProject }) {
-  const set = key => val => setProject(p => ({ ...p, [key]: val }));
-  return (
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 2: TEAM
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderTeam = () => (
     <div>
-      <h3 style={{ margin: "0 0 20px", fontWeight: 400, fontSize: 18 }}>Building Specifications</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Total Units" value={project.totalUnits} onChange={set("totalUnits")} placeholder="e.g. 287" half type="number" />
-          <Field label="Total Floors" value={project.totalFloors} onChange={set("totalFloors")} placeholder="e.g. 26" half type="number" />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Towers" value={project.towers} onChange={set("towers")} placeholder="e.g. 2 (or leave blank)" half />
-          <Field label="Residences Per Floor" value={project.residencesPerFloor} onChange={set("residencesPerFloor")} placeholder="e.g. 4" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Site Area" value={project.siteSF} onChange={set("siteSF")} placeholder="e.g. 4 acres" half />
-          <Field label="Amenity Space" value={project.amenitiesSF} onChange={set("amenitiesSF")} placeholder="e.g. 80,000+ SF" half />
-        </div>
-        <Field label="LEED / Certification" value={project.leedCertified} onChange={set("leedCertified")} placeholder="e.g. LEED Gold (or leave blank)" />
-      </div>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 20, color: T.text }}>Development Team</h2>
+      <Grid>
+        <Field label="Developer" value={project.developer} onChange={v => set("developer", v)} />
+        <Field label="Architect" value={project.architect} onChange={v => set("architect", v)} />
+        <Field label="Interior Designer" value={project.interiorDesigner} onChange={v => set("interiorDesigner", v)} />
+        <Field label="Landscape" value={project.landscape} onChange={v => set("landscape", v)} />
+        <Field label="Sales Broker" value={project.salesBroker} onChange={v => set("salesBroker", v)} />
+        <Field label="Management" value={project.management} onChange={v => set("management", v)} />
+        <Field label="Contractor" value={project.contractor} onChange={v => set("contractor", v)} />
+      </Grid>
     </div>
   );
-}
 
-// ── Step 5: Pricing ───────────────────────────────────────────────────────────
-function StepPricing({ project, setProject }) {
-  const set = key => val => setProject(p => ({ ...p, [key]: val }));
-  return (
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 3: BUILDING SPECS
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderBuilding = () => (
     <div>
-      <h3 style={{ margin: "0 0 20px", fontWeight: 400, fontSize: 18 }}>Pricing & Units</h3>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Price Range (display)" value={project.priceRange} onChange={set("priceRange")} placeholder="e.g. $1.95M – $8M+" half />
-          <Field label="Bedrooms" value={project.bedrooms} onChange={set("bedrooms")} placeholder="e.g. 2–4 Bedrooms" half />
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Field label="Price From ($)" value={project.priceFrom} onChange={set("priceFrom")} placeholder="e.g. 1950000" half type="number" />
-          <Field label="Price To ($)" value={project.priceTo} onChange={set("priceTo")} placeholder="e.g. 8000000" half type="number" />
-        </div>
-        <Field label="Unit Size Range" value={project.unitSizeRange} onChange={set("unitSizeRange")} placeholder="e.g. 1,483 – 4,110 SF interior" />
-        <Field label="Views" value={project.views} onChange={set("views")} placeholder="e.g. Intracoastal Waterway, Atlantic Ocean..." />
-        <Field label="Parking" value={project.parking} onChange={set("parking")} placeholder="e.g. 2 full-size spots included (EV capable)" />
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <label style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Deposit Structure (one per line)</label>
-          <textarea value={project.depositStructure || ""} onChange={e => setProject(p => ({ ...p, depositStructure: e.target.value }))}
-            placeholder={"10% at Reservation\n10% at Hard Contract\n60% at Closing"}
-            rows={4}
-            style={{ padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, color: T.text, background: T.bg, outline: "none", fontFamily: "inherit", resize: "vertical" }} />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          <label style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Key Facts (one per line)</label>
-          <textarea value={Array.isArray(project.keyFacts) ? project.keyFacts.join("\n") : project.keyFacts || ""} onChange={e => setProject(p => ({ ...p, keyFacts: e.target.value.split("\n").filter(Boolean) }))}
-            placeholder={"287 condos across two 26-story towers\n$380M construction financing secured\nJosé Andrés restaurant on site"}
-            rows={5}
-            style={{ padding: "9px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, color: T.text, background: T.bg, outline: "none", fontFamily: "inherit", resize: "vertical" }} />
-        </div>
-      </div>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 20, color: T.text }}>Building Specs</h2>
+      <Grid>
+        <Field label="Total Units" value={project.totalUnits} onChange={v => set("totalUnits", v)} type="number" />
+        <Field label="Total Floors" value={project.totalFloors} onChange={v => set("totalFloors", v)} type="number" />
+        <Field label="Towers" value={project.towers} onChange={v => set("towers", v)} type="number" />
+        <Field label="Residences Per Floor" value={project.residencesPerFloor} onChange={v => set("residencesPerFloor", v)} />
+        <Field label="Site Area" value={project.siteSF} onChange={v => set("siteSF", v)} placeholder="4 acres" />
+        <Field label="Amenity Space" value={project.amenitiesSF} onChange={v => set("amenitiesSF", v)} placeholder="50,000 SF" />
+        <Field label="LEED Certification" value={project.leedCertified} onChange={v => set("leedCertified", v)} placeholder="LEED Gold" />
+      </Grid>
+      <SectionHead label="Pricing & Units" />
+      <Grid>
+        <Field label="Price Range" value={project.priceRange} onChange={v => set("priceRange", v)} placeholder="$5M – $15M+" />
+        <Field label="Price From (number)" value={project.priceFrom} onChange={v => set("priceFrom", v)} type="number" />
+        <Field label="Unit Size Range" value={project.unitSizeRange} onChange={v => set("unitSizeRange", v)} placeholder="1,483 – 4,110 SF interior" />
+        <Field label="Bedrooms" value={project.bedrooms} onChange={v => set("bedrooms", v)} placeholder="2–4 Bedrooms" />
+        <Field label="Views" value={project.views} onChange={v => set("views", v)} />
+        <Field label="Parking" value={project.parking} onChange={v => set("parking", v)} />
+      </Grid>
     </div>
   );
-}
 
-// ── Step 6: Gallery ───────────────────────────────────────────────────────────
-function StepGallery({ project, setProject }) {
-  const [newUrl, setNewUrl] = useState("");
-  const [newCaption, setNewCaption] = useState("");
-  const [newCategory, setNewCategory] = useState("Exterior");
-  const CATEGORIES = ["Exterior", "Arrival", "Residences", "Views", "Amenities", "Dining", "Marina", "Other"];
-
-  const addImage = () => {
-    if (!newUrl.trim()) return;
-    setProject(p => ({ ...p, renderings: [...(p.renderings || []), { url: newUrl.trim(), caption: newCaption.trim(), category: newCategory }] }));
-    setNewUrl(""); setNewCaption("");
-  };
-
-  const removeImage = i => setProject(p => ({ ...p, renderings: p.renderings.filter((_, idx) => idx !== i) }));
-
-  return (
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 4: PRICING (key facts)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderPricing = () => (
     <div>
-      <h3 style={{ margin: "0 0 8px", fontWeight: 400, fontSize: 18 }}>Gallery Images</h3>
-      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 20 }}>
-        {(project.renderings || []).length > 0
-          ? `${project.renderings.length} images loaded from scrape. Add more or remove any below.`
-          : "Add gallery image URLs one by one, or skip — you can add images later."}
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Key Facts & Highlights</h2>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>These show as bullet points on the Overview tab. Add the most compelling selling points.</p>
+      {(project.keyFacts || []).map((fact, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input value={fact} onChange={e => set("keyFacts", project.keyFacts.map((f, j) => j === i ? e.target.value : f))}
+            placeholder="Key selling point..."
+            style={{ flex: 1, padding: "9px 12px", border: `1px solid ${T.border}`, borderRadius: 6, fontSize: 13, fontFamily: "inherit", outline: "none", background: T.bg }} />
+          <button onClick={() => set("keyFacts", project.keyFacts.filter((_, j) => j !== i))} style={{ padding: "9px 14px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 6, cursor: "pointer", color: T.textSub }}>×</button>
+        </div>
+      ))}
+      <button onClick={() => set("keyFacts", [...(project.keyFacts || []), ""])} style={{ padding: "10px 16px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 6, cursor: "pointer", color: T.textSub, fontSize: 13 }}>+ Add Key Fact</button>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 5: GALLERY
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderGallery = () => (
+    <div>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Gallery</h2>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
+        {project.renderings?.length ? `${project.renderings.length} images loaded from research.` : "No images loaded yet."} 
+        {" "}Images are auto-pulled when you scan a site above.
       </p>
-
-      {(project.renderings || []).length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 8, marginBottom: 20, maxHeight: 260, overflowY: "auto" }}>
-          {project.renderings.map((img, i) => (
-            <div key={i} style={{ position: "relative", aspectRatio: "4/3", borderRadius: 6, overflow: "hidden", border: `1px solid ${T.border}`, background: T.bgAlt }}>
-              <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => e.target.style.display = "none"} />
-              <button onClick={() => removeImage(i)} style={{ position: "absolute", top: 3, right: 3, background: "rgba(0,0,0,0.6)", border: "none", color: "#fff", borderRadius: "50%", width: 18, height: 18, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.6)", padding: "2px 4px", fontSize: 9, color: "#fff" }}>{img.category}</div>
+      {project.renderings?.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
+          {project.renderings.slice(0, 12).map((img, i) => (
+            <div key={i} style={{ aspectRatio: "4/3", borderRadius: 6, overflow: "hidden", background: T.bgAlt, border: `1px solid ${T.border}` }}>
+              <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => e.target.style.opacity = 0} />
             </div>
           ))}
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 8, border: `1px solid ${T.border}`, background: T.bgCard }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Add Image</div>
-        <input value={newUrl} onChange={e => setNewUrl(e.target.value)} placeholder="Image URL"
-          style={{ padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
-        <div style={{ display: "flex", gap: 8 }}>
-          <input value={newCaption} onChange={e => setNewCaption(e.target.value)} placeholder="Caption (optional)"
-            style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
-          <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
-            style={{ padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }}>
-            {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-          </select>
-          <button onClick={addImage} disabled={!newUrl.trim()}
-            style={{ padding: "8px 16px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, opacity: !newUrl.trim() ? 0.5 : 1 }}>Add</button>
-        </div>
-      </div>
     </div>
   );
-}
 
-// ── Step 7: Floor Plans ───────────────────────────────────────────────────────
-function StepFloorPlans({ project, setProject }) {
-  const [newName, setNewName] = useState("");
-  const [newThumb, setNewThumb] = useState("");
-  const [newPdf, setNewPdf] = useState("");
-
-  const add = () => {
-    if (!newName.trim()) return;
-    setProject(p => ({ ...p, floorPlanImages: [...(p.floorPlanImages || []), { name: newName.trim(), thumb: newThumb.trim() || null, pdf: newPdf.trim() || null }] }));
-    setNewName(""); setNewThumb(""); setNewPdf("");
-  };
-
-  const remove = i => setProject(p => ({ ...p, floorPlanImages: p.floorPlanImages.filter((_, idx) => idx !== i) }));
-
-  return (
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 6: FLOOR PLANS
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderFloorPlans = () => (
     <div>
-      <h3 style={{ margin: "0 0 8px", fontWeight: 400, fontSize: 18 }}>Floor Plans</h3>
-      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 20 }}>
-        {(project.floorPlanImages || []).length > 0
-          ? `${project.floorPlanImages.length} floor plan PDFs loaded from scrape.`
-          : "Add floor plan images and PDFs. You can skip and add these later."}
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Floor Plans</h2>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
+        {project.floorPlans?.length ? `${project.floorPlans.length} floor plans extracted.` : "No floor plans extracted yet."}
+        {" "}{project.floorPlanImages?.length ? `${project.floorPlanImages.length} floor plan images loaded.` : ""}
       </p>
-
-      {(project.floorPlanImages || []).length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 20, maxHeight: 220, overflowY: "auto" }}>
-          {project.floorPlanImages.map((fp, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.bg }}>
-              <span style={{ fontSize: 16 }}>📐</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{fp.name}</div>
-                <div style={{ fontSize: 11, color: T.textMuted }}>{fp.thumb ? "Has thumbnail" : "No thumbnail"} · {fp.pdf ? "Has PDF" : "No PDF"}</div>
+      {project.floorPlans?.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {project.floorPlans.slice(0, 10).map((plan, i) => (
+            <div key={i} style={{ padding: "12px 16px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{plan.name || plan.model}</div>
+                <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
+                  {[plan.beds && String(plan.beds), plan.baths && String(plan.baths), (plan.interiorSF || plan.sqft) && ((plan.interiorSF || plan.sqft) + " SF")].filter(Boolean).join("  ·  ")}
+                </div>
               </div>
-              <button onClick={() => remove(i)} style={{ background: "none", border: "none", color: T.textMuted, cursor: "pointer", fontSize: 16 }}>✕</button>
+              {(plan.priceFrom || plan.price) && <div style={{ fontSize: 14, fontWeight: 700, color: "#2D9FBF" }}>${((plan.priceFrom || plan.price) / 1000000).toFixed(2)}M</div>}
             </div>
           ))}
         </div>
       )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 8, border: `1px solid ${T.border}`, background: T.bgCard }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Add Floor Plan</div>
-        <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name (e.g. Plan A, Residence A1)"
-          style={{ padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
-        <input value={newThumb} onChange={e => setNewThumb(e.target.value)} placeholder="Thumbnail image URL (optional)"
-          style={{ padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
-        <div style={{ display: "flex", gap: 8 }}>
-          <input value={newPdf} onChange={e => setNewPdf(e.target.value)} placeholder="PDF URL (optional)"
-            style={{ flex: 1, padding: "8px 12px", borderRadius: 6, border: `1px solid ${T.border}`, fontSize: 13, fontFamily: "inherit" }} />
-          <button onClick={add} disabled={!newName.trim()}
-            style={{ padding: "8px 16px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Add</button>
-        </div>
-      </div>
     </div>
   );
-}
 
-// ── Step 8: Review & Save ─────────────────────────────────────────────────────
-function StepReview({ project, onSave, saving, saveResult, saveError }) {
-  const checks = [
-    ["Building ID", project.id, "Required"],
-    ["Name", project.name, "Required"],
-    ["Address", project.address, ""],
-    ["Developer", project.developer, ""],
-    ["Price Range", project.priceRange, ""],
-    ["Gallery Images", `${(project.renderings || []).length} images`, ""],
-    ["Floor Plans", `${(project.floorPlanImages || []).length} plans`, ""],
-  ];
-
-  const missingRequired = !project.id || !project.name;
-
-  return (
+  // ═══════════════════════════════════════════════════════════════════════════
+  // STEP 7: REVIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  const renderReview = () => (
     <div>
-      <h3 style={{ margin: "0 0 8px", fontWeight: 400, fontSize: 18 }}>Review & Save</h3>
-      <p style={{ color: T.textSub, fontSize: 13, marginBottom: 24 }}>Review the summary below, then save. Vercel will automatically redeploy — the building will be live in ~60 seconds.</p>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: 8, overflow: "hidden", border: `1px solid ${T.border}`, marginBottom: 24 }}>
-        {checks.map(([label, value, note], i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "160px 1fr", padding: "10px 16px", background: i % 2 === 0 ? T.bgAlt : T.bg, borderBottom: i < checks.length - 1 ? `1px solid ${T.border}` : "none" }}>
-            <div style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label} {note && <span style={{ color: "#c00" }}>*</span>}</div>
-            <div style={{ fontSize: 13, color: value ? T.text : T.textMuted, fontStyle: value ? "normal" : "italic" }}>{value || "Not set"}</div>
+      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Review & Add</h2>
+      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>Review the summary below, then click Add Building to save.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10, marginBottom: 24 }}>
+        {[
+          ["Building", project.suggestedName || "(no name)"],
+          ["Status", project.status],
+          ["Developer", project.developer],
+          ["Address", project.address],
+          ["Price Range", project.priceRange],
+          ["Units", project.totalUnits],
+          ["Floors", project.totalFloors],
+          ["Est. Delivery", project.estimatedDelivery],
+          ["Renderings", project.renderings?.length + " images"],
+          ["Floor Plans", project.floorPlans?.length + " plans"],
+          ["Key Facts", project.keyFacts?.length + " items"],
+        ].map(([k, v]) => v && v !== "undefined items" && (
+          <div key={k} style={{ padding: "10px 14px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{k}</div>
+            <div style={{ fontSize: 14, color: T.text, fontWeight: k === "Building" ? 700 : 400 }}>{v}</div>
           </div>
         ))}
       </div>
-
-      {missingRequired && (
-        <div style={{ padding: "10px 16px", borderRadius: 6, background: "#fff5f5", border: "1px solid #ffcccc", color: "#c00", fontSize: 13, marginBottom: 16 }}>
-          Building ID and Name are required before saving.
-        </div>
-      )}
-
-      {saveError && (
-        <div style={{ padding: "10px 16px", borderRadius: 6, background: "#fff5f5", border: "1px solid #ffcccc", color: "#c00", fontSize: 13, marginBottom: 16 }}>
-          Error: {saveError}
-        </div>
-      )}
-
-      {saveResult && (
-        <div style={{ padding: "16px", borderRadius: 6, background: "#f0fff4", border: "1px solid #a5d6a7", color: "#2e7d32", fontSize: 13, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>✓ {saveResult.message}</div>
-          <div>The page will refresh automatically when the redeploy is complete.</div>
-        </div>
-      )}
-
-      {!saveResult && (
-        <button onClick={onSave} disabled={saving || missingRequired}
-          style={{
-            padding: "13px 32px", borderRadius: 6, background: T.accent, color: "#fff",
-            border: "none", cursor: saving || missingRequired ? "default" : "pointer",
-            fontSize: 15, fontWeight: 700, opacity: saving || missingRequired ? 0.5 : 1,
-            letterSpacing: "0.02em",
-          }}>
-          {saving ? "⏳ Saving..." : "🚀 Save & Deploy Building"}
-        </button>
-      )}
+      <button onClick={handleSubmit} style={{ width: "100%", padding: "16px", background: project.accentColor || "#111", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", minHeight: 54 }}>
+        ✓ Add Building
+      </button>
     </div>
   );
-}
 
-// ── Main AddProject Component ─────────────────────────────────────────────────
-export default function AddProject({ onClose }) {
-  const [step, setStep] = useState(0);
-  const [method, setMethod] = useState(null);
-  const [project, setProject] = useState({ ...EMPTY_PROJECT });
-  const [saving, setSaving] = useState(false);
-  const [saveResult, setSaveResult] = useState(null);
-  const [saveError, setSaveError] = useState(null);
-
-  const next = () => setStep(s => Math.min(s + 1, STEPS.length - 1));
-  const back = () => setStep(s => Math.max(s - 1, 0));
-
-  const chooseMethod = (m) => { setMethod(m); setStep(1); };
-
-  const save = async () => {
-    setSaving(true); setSaveError(null);
-    try {
-      // Clean up project data
-      const cleaned = {
-        ...project,
-        totalUnits: project.totalUnits ? parseInt(project.totalUnits) : null,
-        totalFloors: project.totalFloors ? parseInt(project.totalFloors) : null,
-        priceFrom: project.priceFrom ? parseInt(project.priceFrom) : null,
-        priceTo: project.priceTo ? parseInt(project.priceTo) : null,
-        depositStructure: typeof project.depositStructure === "string"
-          ? project.depositStructure.split("\n").filter(Boolean)
-          : project.depositStructure,
-        darkColor: "#111111",
-        theme: "custom",
-      };
-
-      const res = await fetch("/api/save-project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project: cleaned }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setSaveResult(data);
-
-      // Auto-reload after 75 seconds (Vercel redeploy time)
-      setTimeout(() => window.location.reload(), 75000);
-    } catch (e) {
-      setSaveError(e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const renderStep = () => {
-    switch (step) {
-      case 0: return <StepMethod onChoose={chooseMethod} />;
-      case 1: return <StepScrape project={project} setProject={setProject} method={method} onNext={next} />;
-      case 2: return <StepBasic project={project} setProject={setProject} />;
-      case 3: return <StepTeam project={project} setProject={setProject} />;
-      case 4: return <StepBuilding project={project} setProject={setProject} />;
-      case 5: return <StepPricing project={project} setProject={setProject} />;
-      case 6: return <StepGallery project={project} setProject={setProject} />;
-      case 7: return <StepFloorPlans project={project} setProject={setProject} />;
-      case 8: return <StepReview project={project} onSave={save} saving={saving} saveResult={saveResult} saveError={saveError} />;
-      default: return null;
-    }
-  };
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ═══════════════════════════════════════════════════════════════════════════
+  const steps = [renderGather, renderBasicInfo, renderTeam, renderBuilding, renderPricing, renderGallery, renderFloorPlans, renderReview];
 
   return (
-    <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: T.bg, fontFamily: "'Inter', system-ui, sans-serif" }}>
       {/* Header */}
-      <div style={{ background: T.bgAlt, borderBottom: `1px solid ${T.border}`, padding: "16px 32px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ borderBottom: `1px solid ${T.border}`, padding: "14px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", background: T.bg }}>
         <div>
-          <div style={{ fontSize: 10, color: T.textMuted, letterSpacing: "0.14em", textTransform: "uppercase" }}>Modern Living Group</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Add New Building</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Modern Living Group</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>Add New Building</div>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 16px", color: T.textSub, cursor: "pointer", fontSize: 13 }}>
-          ✕ Cancel
-        </button>
+        <button onClick={onCancel} style={{ background: "none", border: "none", fontSize: 13, color: T.textMuted, cursor: "pointer", padding: "8px 12px" }}>× Cancel</button>
       </div>
 
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "36px 32px" }}>
-        {step > 0 && <StepIndicator current={step} total={STEPS.length} />}
-        {renderStep()}
-
-        {/* Nav buttons — not shown on step 0 or scrape step (has its own) */}
-        {step > 1 && step < 8 && (
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 32, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
-            <button onClick={back} style={{ padding: "10px 24px", borderRadius: 6, background: T.bgAlt, color: T.textSub, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 14 }}>
-              ← Back
-            </button>
-            <button onClick={next} style={{ padding: "10px 28px", borderRadius: 6, background: T.accent, color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-              Continue →
-            </button>
-          </div>
-        )}
-        {step === 1 && method !== "scrape" && (
-          <div style={{ display: "flex", marginTop: 32, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
-            <button onClick={back} style={{ padding: "10px 24px", borderRadius: 6, background: T.bgAlt, color: T.textSub, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 14 }}>
-              ← Back
-            </button>
-          </div>
-        )}
-        {step === 8 && !saveResult && (
-          <div style={{ display: "flex", marginTop: 32, paddingTop: 20, borderTop: `1px solid ${T.border}` }}>
-            <button onClick={back} style={{ padding: "10px 24px", borderRadius: 6, background: T.bgAlt, color: T.textSub, border: `1px solid ${T.border}`, cursor: "pointer", fontSize: 14 }}>
-              ← Back
-            </button>
-          </div>
-        )}
+      {/* Content */}
+      <div style={{ flex: 1, maxWidth: 760, width: "100%", margin: "0 auto", padding: "32px 24px", boxSizing: "border-box" }}>
+        <StepBar step={step} />
+        {steps[step]?.()}
       </div>
+
+      {/* Nav footer */}
+      {step > 0 && (
+        <div style={{ borderTop: `1px solid ${T.border}`, padding: "16px 24px", display: "flex", justifyContent: "space-between", background: T.bg }}>
+          <button onClick={back} style={{ padding: "10px 20px", background: T.bgAlt, border: `1px solid ${T.border}`, borderRadius: 8, cursor: "pointer", fontSize: 14, color: T.text, fontWeight: 600 }}>← Back</button>
+          {step < STEPS.length - 1 && (
+            <button onClick={next} style={{ padding: "10px 24px", background: "#111", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, color: "#fff", fontWeight: 700 }}>Next →</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
