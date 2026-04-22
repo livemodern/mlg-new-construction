@@ -1,55 +1,31 @@
-// api/pricing.js — Pricing CRUD using Upstash REST API directly
-const https = require('https');
-
-function kvRequest(method, path, body) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(process.env.KV_REST_API_URL + path);
-    const data = body ? JSON.stringify(body) : null;
-    const req = https.request({
-      hostname: url.hostname,
-      path: url.pathname + url.search,
-      method,
-      headers: {
-        'Authorization': 'Bearer ' + process.env.KV_REST_API_TOKEN,
-        'Content-Type': 'application/json',
-        ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
-      },
-    }, (res) => {
-      let b = ''; res.on('data', c => b += c);
-      res.on('end', () => { try { resolve(JSON.parse(b)); } catch { resolve(b); } });
-    });
-    req.on('error', reject);
-    if (data) req.write(data);
-    req.end();
-  });
-}
-
-async function kvGet(key) {
-  const r = await kvRequest('GET', '/get/' + encodeURIComponent(key));
-  const raw = r?.result ?? null;
-  if (!raw) return null;
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
-}
-
-async function kvSet(key, value) {
-  return kvRequest('POST', '/set/' + encodeURIComponent(key), [JSON.stringify(value)]);
-}
-
+// api/pricing.js — using fetch() + Upstash REST API
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
   const { buildingId, unitId } = req.query;
+  const KV_URL   = process.env.KV_REST_API_URL;
+  const KV_TOKEN = process.env.KV_REST_API_TOKEN;
+
+  const kvGet = async (key) => {
+    const r = await fetch(KV_URL + '/get/' + encodeURIComponent(key), { headers: { Authorization: 'Bearer ' + KV_TOKEN } });
+    const j = await r.json();
+    const raw = j?.result ?? null;
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return raw; }
+  };
+  const kvSet = async (key, value) => {
+    const r = await fetch(KV_URL + '/set/' + encodeURIComponent(key), { method: 'POST', headers: { Authorization: 'Bearer ' + KV_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify([JSON.stringify(value)]) });
+    return r.json();
+  };
 
   try {
     if (req.method === 'GET') {
       if (!buildingId) return res.status(400).json({ error: 'buildingId required' });
-      const pricing = await kvGet('pricing:' + buildingId) || [];
-      return res.status(200).json(pricing);
+      return res.status(200).json(await kvGet('pricing:' + buildingId) || []);
     }
 
     if (req.method === 'POST') {
       const { buildingId: bid, units, unit } = req.body || {};
       if (!bid) return res.status(400).json({ error: 'buildingId required' });
-
       if (units !== undefined) {
         await kvSet('pricing:' + bid, units);
         if (units.length > 0) {
@@ -57,9 +33,9 @@ export default async function handler(req, res) {
           if (prices.length > 0) {
             const building = await kvGet('building:' + bid);
             if (building) {
-              const fmt = p => '$' + (p >= 1000000 ? (p / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M' : p.toLocaleString());
+              const fmt = p => '$' + (p >= 1000000 ? (p/1000000).toFixed(2).replace(/\.?0+$/,'') + 'M' : p.toLocaleString());
               building.priceFrom  = prices[0];
-              building.priceRange = fmt(prices[0]) + (prices.length > 1 ? ' \u2013 ' + fmt(prices[prices.length - 1]) + '+' : '+');
+              building.priceRange = fmt(prices[0]) + (prices.length > 1 ? ' \u2013 ' + fmt(prices[prices.length-1]) + '+' : '+');
               building.updatedAt  = new Date().toISOString();
               await kvSet('building:' + bid, building);
             }
@@ -67,7 +43,6 @@ export default async function handler(req, res) {
         }
         return res.status(200).json({ ok: true, count: units.length });
       }
-
       if (unit !== undefined) {
         const existing = await kvGet('pricing:' + bid) || [];
         const idx = existing.findIndex(u => u.id === unit.id);
@@ -75,7 +50,6 @@ export default async function handler(req, res) {
         await kvSet('pricing:' + bid, existing);
         return res.status(200).json({ ok: true });
       }
-
       return res.status(400).json({ error: 'units or unit required' });
     }
 
