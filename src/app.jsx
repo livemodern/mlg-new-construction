@@ -27,14 +27,21 @@ function useIsMobile() {
   return mobile;
 }
 
+const STATUS_STYLES = {
+  "Pre-Sales":                          { bg: "#f3e5f5", color: "#6a1b9a", border: "#ce93d8" },
+  "Pre-Construction / Sales Launched":  { bg: "#fff8e1", color: "#e65100", border: "#ffcc80" },
+  "Under Construction":                 { bg: "#e8f5e9", color: "#2e7d32", border: "#a5d6a7" },
+  "Completed":                          { bg: "#e3f2fd", color: "#1565c0", border: "#90caf9" },
+};
+
 function ProjectBadge({ status }) {
-  const isBuilding = status === "Under Construction";
+  const s = STATUS_STYLES[status] || STATUS_STYLES["Pre-Construction / Sales Launched"];
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 5,
-      background: isBuilding ? "#e8f5e9" : "#fff8e1",
-      color: isBuilding ? "#2e7d32" : "#e65100",
-      border: "1px solid " + (isBuilding ? "#a5d6a7" : "#ffcc80"),
+      background: s.bg,
+      color: s.color,
+      border: "1px solid " + s.border,
       fontSize: 10, fontWeight: 700, letterSpacing: "0.1em",
       padding: "3px 9px", borderRadius: 20, textTransform: "uppercase",
       whiteSpace: "nowrap",
@@ -306,7 +313,7 @@ function EditModal({ building, onSave, onClose }) {
           </Grid>
           <SH label="Status and Timeline" />
           <Grid>
-            <SI label="Status" k="status" options={["Pre-Construction / Sales Launched", "Under Construction", "Completed"]} />
+            <SI label="Status" k="status" options={["Pre-Sales", "Pre-Construction / Sales Launched", "Under Construction", "Completed"]} />
             <FI label="Sales Launch" k="salesLaunch" placeholder="January 2024" />
             <FI label="Est. Delivery" k="estimatedDelivery" placeholder="Q4 2027" />
             <FI label="Construction Start" k="constructionStart" placeholder="April 2024" />
