@@ -118,7 +118,7 @@ export default async function handler(req, res) {
       '6. Search "[building name] sales contact phone"',
       '7. Search "[building name] key facts amenities"',
       '',
-      'Return ONLY valid JSON (no markdown, no backticks):',
+      'Return ONLY valid JSON (no markdown, no backticks, no <cite> tags or citations of any kind around values):',
       '{',
       '  "suggestedId": "lowercasealphanumericonly",',
       '  "suggestedName": "Building Name",',
@@ -222,12 +222,26 @@ export default async function handler(req, res) {
 
     if (!finalText) return res.status(500).json({ error: 'No response after ' + itr + ' iterations' });
 
-    const match = finalText.match(/\{[\s\S]+\}/);
-    if (!match) return res.status(500).json({ error: 'No JSON in response', preview: finalText.substring(0, 300) });
+    // The Anthropic web_search tool auto-wraps values in <cite> tags. These break JSON.parse.
+    // Strip any tag with the form <cite ...>...</cite> (or self-closing) before parsing.
+    // Also strip ... in case the namespaced form leaks through.
+    const stripCitations = (s) => s
+      .replace(/<\/?(?:antml:)?cite[^>]*>/g, '')
+      .replace(/<\/?(?:antml:)?source[^>]*>/g, '');
+
+    const cleaned = stripCitations(finalText);
+    const match = cleaned.match(/\{[\s\S]+\}/);
+    if (!match) return res.status(500).json({ error: 'No JSON in response', preview: cleaned.substring(0, 300) });
 
     let building;
     try { building = JSON.parse(match[0]); }
-    catch (e) { return res.status(500).json({ error: 'JSON parse: ' + e.message }); }
+    catch (e) {
+      // Surface a useful preview so we can see what actually came back
+      return res.status(500).json({
+        error: 'JSON parse: ' + e.message,
+        preview: match[0].substring(0, 500),
+      });
+    }
 
     if (!building.images || !building.images.length) building.images = allImages.slice(0, 40);
     building.renderings = (building.images || []).map(i => ({ url: i.url, caption: i.caption, category: i.category }));
