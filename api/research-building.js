@@ -412,20 +412,44 @@ export default async function handler(req, res) {
       }
     }
 
-    if (!building.images || !building.images.length) building.images = allImages.slice(0, 40);
+    // Build the final image pool. We deliberately IGNORE building.images here —
+    // Claude tends to cherry-pick only 5-10 images even when given 50, since
+    // it's optimizing output token count. Our scraped+sitemap pool has the full
+    // set already correctly categorized via filename heuristics, so just use
+    // that. If Claude returned captions for any URLs, merge those in.
+    const claudeCaptions = new Map();
+    for (const img of (building.images || [])) {
+      if (img.url && img.caption) claudeCaptions.set(img.url, img.caption);
+    }
 
-    // Split scraped images by category — Floor-Plan-classified ones go to
-    // floorPlanImages (the field that powers the Floor Plans tab); everything
-    // else stays in renderings (the field that powers the Gallery tab).
+    // Priority order — Floor Plans first (so they always make the cut),
+    // then high-value content categories, then everything else last.
+    const CATEGORY_PRIORITY = {
+      'Floor Plans': 0,
+      'Exterior':    1,
+      'Residences':  2,
+      'Amenities':   3,
+      'Views':       4,
+      'Arrival':     5,
+    };
+
+    const sortedImages = [...allImages].sort((a, b) => {
+      const pa = CATEGORY_PRIORITY[a.category] ?? 9;
+      const pb = CATEGORY_PRIORITY[b.category] ?? 9;
+      return pa - pb;
+    }).slice(0, 30); // hard cap at 30 — generous, no AI cost since this is post-Claude
+
+    // Split into floor plans vs renderings, applying any Claude captions
     const isFloorPlan = i => i.category === 'Floor Plans';
-    const floorPlanItems = (building.images || []).filter(isFloorPlan).map(i => ({
-      name:  i.caption || (i.url.split('/').pop() || 'Floor Plan').replace(/\.[^.]+$/, ''),
+    const floorPlanItems = sortedImages.filter(isFloorPlan).map(i => ({
+      name:  claudeCaptions.get(i.url) || i.caption ||
+             (i.url.split('/').pop() || 'Floor Plan').replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
       thumb: i.url,
-      pdf:   i.url, // for image-based plans, thumb and target are the same
+      pdf:   i.url,
     }));
-    const renderingItems = (building.images || []).filter(i => !isFloorPlan(i)).map(i => ({
+    const renderingItems = sortedImages.filter(i => !isFloorPlan(i)).map(i => ({
       url:      i.url,
-      caption:  i.caption,
+      caption:  claudeCaptions.get(i.url) || i.caption || '',
       category: i.category,
     }));
 
