@@ -808,15 +808,23 @@ function ProjectView({ project, onEdit }) {
         </div>
       </div>
 
-      <div style={{ borderBottom: "1px solid " + T.border, background: T.bg, overflowX: "auto", scrollbarWidth: "none" }}>
-        <div style={{ display: "flex", minWidth: "max-content", padding: "0 " + (isMobile ? "16" : "32") + "px" }}>
+      <div style={{ borderBottom: "1px solid " + T.border, background: T.bg, overflowX: isMobile ? "visible" : "auto", scrollbarWidth: "none" }}>
+        <div style={{
+          display: "flex",
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          minWidth: isMobile ? "auto" : "max-content",
+          padding: "0 " + (isMobile ? "8" : "32") + "px",
+        }}>
           {TABS.map(t => (
             <button key={t} onClick={() => setTab(t)} style={{
-              padding: "12px 14px", background: "none", border: "none",
+              flex: isMobile ? "1 1 33.33%" : "0 0 auto",
+              padding: isMobile ? "11px 6px" : "12px 14px",
+              background: "none", border: "none",
               borderBottom: "2px solid " + (tab === t ? accent : "transparent"),
               color: tab === t ? accent : T.textSub,
-              fontSize: 13, fontWeight: tab === t ? 700 : 400,
+              fontSize: isMobile ? 12 : 13, fontWeight: tab === t ? 700 : 400,
               cursor: "pointer", whiteSpace: "nowrap",
+              fontFamily: "inherit",
             }}>
               {t}
               {t === "Gallery" && project.renderings && project.renderings.length ? " (" + project.renderings.length + ")" : ""}
@@ -989,6 +997,120 @@ function ProjectView({ project, onEdit }) {
   );
 }
 
+function BuildingDropdown({ buildings, activeId, setActiveId }) {
+  const [open, setOpen] = useState(false);
+  const active = buildings.find(b => (b.id || b.suggestedId) === activeId) || buildings[0];
+  const accent = active?.accentColor || "#2D9FBF";
+
+  function pick(id) {
+    setActiveId(id);
+    setOpen(false);
+  }
+
+  return (
+    <>
+      <div style={{ background: T.bgNav, borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
+        <button
+          onClick={() => setOpen(true)}
+          style={{
+            width: "100%",
+            padding: "13px 16px",
+            background: "none",
+            border: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: accent, flexShrink: 0 }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: T.text, letterSpacing: "0.01em", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {active?.suggestedName || active?.name || "Select building"}
+            </span>
+            <span style={{ fontSize: 11, color: T.textMuted, fontWeight: 600, flexShrink: 0 }}>
+              {buildings.length} total
+            </span>
+          </div>
+          <span style={{ color: T.textMuted, fontSize: 13, marginLeft: 8, flexShrink: 0 }}>▼</span>
+        </button>
+      </div>
+
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 1000,
+            background: "rgba(0,0,0,0.4)",
+            display: "flex", alignItems: "flex-end",
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: "100%",
+              background: T.bg,
+              borderTopLeftRadius: 14,
+              borderTopRightRadius: 14,
+              maxHeight: "75vh",
+              overflowY: "auto",
+              boxShadow: "0 -4px 20px rgba(0,0,0,0.15)",
+            }}
+          >
+            <div style={{ padding: "16px 16px 8px", borderBottom: "1px solid " + T.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                Select Building
+              </div>
+              <button onClick={() => setOpen(false)} style={{ background: "none", border: "none", color: T.textSub, fontSize: 22, cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: "8px 0" }}>
+              {buildings.map(b => {
+                const id = b.id || b.suggestedId;
+                const acc = b.accentColor || "#2D9FBF";
+                const isActive = activeId === id;
+                return (
+                  <button
+                    key={id}
+                    onClick={() => pick(id)}
+                    style={{
+                      width: "100%",
+                      padding: "14px 16px",
+                      background: isActive ? T.bgAlt : "none",
+                      border: "none",
+                      borderLeft: "3px solid " + (isActive ? acc : "transparent"),
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      fontFamily: "inherit",
+                    }}
+                  >
+                    <div style={{ width: 10, height: 10, borderRadius: 3, background: acc, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: isActive ? 700 : 500, color: T.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {b.suggestedName || b.name}
+                      </div>
+                      {b.subtitle && (
+                        <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {b.subtitle}
+                        </div>
+                      )}
+                    </div>
+                    {isActive && <span style={{ color: acc, fontSize: 16, flexShrink: 0 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ height: "env(safe-area-inset-bottom, 0)" }} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function App() {
   const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1081,23 +1203,27 @@ export default function App() {
       </div>
 
       {buildings.length > 0 && (
-        <div style={{ background: T.bgNav, borderBottom: "1px solid " + T.border, overflowX: "auto", scrollbarWidth: "none", flexShrink: 0 }}>
-          <div style={{ display: "flex", minWidth: "max-content", padding: "0 " + (isMobile ? "12" : "24") + "px" }}>
-            {buildings.map(b => {
-              const id = b.id || b.suggestedId;
-              const acc = b.accentColor || "#2D9FBF";
-              return (
-                <button key={id} onClick={() => setActiveId(id)} style={{
-                  padding: "11px 16px", background: "none", border: "none",
-                  borderBottom: "2px solid " + (activeId === id ? acc : "transparent"),
-                  color: activeId === id ? acc : T.navText,
-                  fontSize: 13, fontWeight: activeId === id ? 700 : 400,
-                  cursor: "pointer", whiteSpace: "nowrap", letterSpacing: "0.02em",
-                }}>{b.suggestedName || b.name}</button>
-              );
-            })}
+        isMobile ? (
+          <BuildingDropdown buildings={buildings} activeId={activeId} setActiveId={setActiveId} />
+        ) : (
+          <div style={{ background: T.bgNav, borderBottom: "1px solid " + T.border, overflowX: "auto", scrollbarWidth: "none", flexShrink: 0 }}>
+            <div style={{ display: "flex", minWidth: "max-content", padding: "0 24px" }}>
+              {buildings.map(b => {
+                const id = b.id || b.suggestedId;
+                const acc = b.accentColor || "#2D9FBF";
+                return (
+                  <button key={id} onClick={() => setActiveId(id)} style={{
+                    padding: "11px 16px", background: "none", border: "none",
+                    borderBottom: "2px solid " + (activeId === id ? acc : "transparent"),
+                    color: activeId === id ? acc : T.navText,
+                    fontSize: 13, fontWeight: activeId === id ? 700 : 400,
+                    cursor: "pointer", whiteSpace: "nowrap", letterSpacing: "0.02em",
+                  }}>{b.suggestedName || b.name}</button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )
       )}
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
