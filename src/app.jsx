@@ -798,14 +798,56 @@ function ProjectView({ project, onEdit }) {
             <div style={{ fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Starting price range</div>
           </div>
         )}
-        <div style={{ display: "flex", gap: 0, marginTop: 12, borderTop: "1px solid " + T.border, overflowX: "auto" }}>
-          {[["Units", project.totalUnits], ["Floors", project.totalFloors], ["Developer", project.developer], ["Architect", project.architect], ["Est. Delivery", project.estimatedDelivery || "TBD"]].filter(([, v]) => v).map(([k, v]) => (
-            <div key={k} style={{ padding: "10px 16px", borderRight: "1px solid " + T.border, flexShrink: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{k}</div>
-              <div style={{ fontSize: isMobile ? 12 : 13, fontWeight: 500, color: T.text, whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{String(v)}</div>
+        {(() => {
+          const stats = [
+            ["Units",         project.totalUnits],
+            ["Floors",        project.totalFloors],
+            ["Developer",     project.developer],
+            ["Architect",     project.architect],
+            ["Est. Delivery", project.estimatedDelivery || "TBD"],
+          ].filter(([, v]) => v);
+          if (!stats.length) return null;
+          return isMobile ? (
+            <div style={{
+              marginTop: 12,
+              border: "1px solid " + T.border,
+              borderRadius: 8,
+              overflow: "hidden",
+              background: T.bg,
+            }}>
+              {stats.map(([k, v], i) => (
+                <div key={k} style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  padding: "10px 14px",
+                  borderBottom: i < stats.length - 1 ? "1px solid " + T.border : "none",
+                  gap: 12,
+                }}>
+                  <div style={{
+                    fontSize: 10, fontWeight: 700, color: T.textMuted,
+                    textTransform: "uppercase", letterSpacing: "0.06em",
+                    flexShrink: 0, paddingTop: 2,
+                  }}>{k}</div>
+                  <div style={{
+                    fontSize: 13, fontWeight: 500, color: T.text,
+                    textAlign: "right", lineHeight: 1.4,
+                    wordBreak: "break-word",
+                  }}>{String(v)}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          ) : (
+            <div style={{ display: "flex", gap: 0, marginTop: 12, borderTop: "1px solid " + T.border, overflowX: "auto" }}>
+              {stats.map(([k, v]) => (
+                <div key={k} style={{ padding: "10px 16px", borderRight: "1px solid " + T.border, flexShrink: 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{k}</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: T.text, whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{String(v)}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       <div style={{ borderBottom: "1px solid " + T.border, background: T.bg, overflowX: isMobile ? "visible" : "auto", scrollbarWidth: "none" }}>
