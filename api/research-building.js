@@ -156,7 +156,8 @@ export default async function handler(req, res) {
       '6. Search "[building name] sales contact phone"',
       '7. Search "[building name] key facts amenities"',
       '',
-      'Return ONLY valid JSON (no markdown, no backticks, no <cite> tags or citations of any kind around values):',
+      'Return ONLY valid JSON (no markdown, no backticks, no <cite> tags or citations of any kind around values).',
+      'CRITICAL: Every string value MUST be wrapped in double quotes — including company names, person names, and any value with spaces or special characters. Never write "developer": BGI Companies — always write "developer": "BGI Companies". Numbers and null are unquoted; everything else needs quotes.',
       '{',
       '  "suggestedId": "lowercasealphanumericonly",',
       '  "suggestedName": "Building Name",',
@@ -279,14 +280,46 @@ export default async function handler(req, res) {
     const match = cleaned.match(/\{[\s\S]+\}/);
     if (!match) return res.status(500).json({ error: 'No JSON in response', preview: cleaned.substring(0, 300) });
 
+    // Try parse; if it fails, attempt repairs for the most common Claude mistakes
+    function tryRepair(s) {
+      // 1. Wrap unquoted identifier values like:  "developer": BGI Companies, "next": ...
+      //    into:  "developer": "BGI Companies", "next": ...
+      // Match a key ":" then a non-quoted, non-{[ value that runs until comma or newline before next key.
+      let repaired = s.replace(
+        /"([A-Za-z_]\w*)"\s*:\s*([A-Za-z][^,\n}\]]*?)\s*(?=,\s*"[A-Za-z_]|\s*[}\]])/g,
+        (m, key, value) => {
+          const v = value.trim();
+          // Skip values that are already valid JSON literals
+          if (v === 'null' || v === 'true' || v === 'false') return m;
+          if (/^-?\d+(\.\d+)?$/.test(v)) return m;
+          // Wrap with quotes, escape any internal quotes
+          return '"' + key + '": "' + v.replace(/"/g, '\\"') + '"';
+        }
+      );
+      // 2. Trailing commas before } or ]
+      repaired = repaired.replace(/,(\s*[}\]])/g, '$1');
+      return repaired;
+    }
+
     let building;
-    try { building = JSON.parse(match[0]); }
-    catch (e) {
-      // Surface a useful preview so we can see what actually came back
-      return res.status(500).json({
-        error: 'JSON parse: ' + e.message,
-        preview: match[0].substring(0, 500),
-      });
+    let parseAttempts = [];
+    try { building = JSON.parse(match[0]); parseAttempts.push('first-pass'); }
+    catch (e1) {
+      parseAttempts.push('first-pass-failed: ' + e1.message);
+      try {
+        const repaired = tryRepair(match[0]);
+        building = JSON.parse(repaired);
+        parseAttempts.push('repaired-ok');
+        console.log('[Research] JSON parse succeeded after repair');
+      } catch (e2) {
+        parseAttempts.push('repair-failed: ' + e2.message);
+        return res.status(500).json({
+          error: 'JSON parse failed even after repair: ' + e2.message,
+          firstError: e1.message,
+          attempts: parseAttempts,
+          preview: match[0].substring(0, 800),
+        });
+      }
     }
 
     if (!building.images || !building.images.length) building.images = allImages.slice(0, 40);
