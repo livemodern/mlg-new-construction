@@ -4,10 +4,15 @@ import { getBlobToken } from './_blob-env.js';
 
 export const maxDuration = 300;
 
+function decodeHeader(value) {
+  if (!value) return '';
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const buildingId = req.headers['x-building-id'] || 'unknown';
-  const docName    = req.headers['x-doc-name']    || ('doc-' + Date.now());
+  const docName    = decodeHeader(req.headers['x-doc-name']) || ('doc-' + Date.now());
   const context    = req.headers['x-context']     || '';
   const BLOB_TOKEN = getBlobToken();
   if (!BLOB_TOKEN) return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured. Make sure the Blob store is connected to this Vercel project and the deployment has been refreshed.' });

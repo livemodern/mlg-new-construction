@@ -16,6 +16,11 @@ function safeName(name) {
   return (name || ('asset-' + Date.now())).replace(/[^a-z0-9._-]/gi, '_');
 }
 
+function decodeHeader(value) {
+  if (!value) return '';
+  try { return decodeURIComponent(value); } catch { return value; }
+}
+
 function inferContentType(filename, fallback) {
   const ext = (filename.split('.').pop() || '').toLowerCase();
   if (ext === 'pdf')                      return 'application/pdf';
@@ -31,7 +36,7 @@ export default async function handler(req, res) {
 
   const buildingId = req.headers['x-building-id'];
   const kind       = (req.headers['x-asset-kind'] || 'asset').toLowerCase();
-  const filename   = safeName(req.headers['x-filename']);
+  const filename   = safeName(decodeHeader(req.headers['x-filename']));
   const BLOB_TOKEN = getBlobToken();
 
   if (!buildingId)  return res.status(400).json({ error: 'x-building-id required' });
@@ -56,12 +61,29 @@ export default async function handler(req, res) {
     const contentType = inferContentType(filename, req.headers['content-type']);
     const blobPath    = 'buildings/' + buildingId + '/' + subfolder + '/' + filename;
 
-    const blob = await put(blobPath, buf, {
-      access: 'public',
-      contentType,
-      token: BLOB_TOKEN,
-      addRandomSuffix: true, // avoid collisions if same filename uploaded twice
-    });
+    console.log('[UploadAsset] put()', { blobPath, contentType, sizeBytes: buf.length, kind });
+
+    let blob;
+    try {
+      blob = await put(blobPath, buf, {
+        access: 'public',
+        contentType,
+        token: BLOB_TOKEN,
+        addRandomSuffix: true,
+      });
+    } catch (sdkErr) {
+      console.error('[UploadAsset] put() failed', { blobPath, contentType, msg: sdkErr.message, name: sdkErr.name, stack: sdkErr.stack });
+      return res.status(500).json({
+        error:       'Upload to Vercel Blob failed: ' + (sdkErr.message || 'unknown'),
+        attempted:   { blobPath, contentType, sizeBytes: buf.length, kind, filename },
+        sdkErrName:  sdkErr.name || null,
+        hint: /private store/i.test(sdkErr.message || '')
+          ? 'Your Vercel Blob store is set to private. Switch to public in the dashboard.'
+          : /pattern/i.test(sdkErr.message || '')
+            ? 'The pathname or content type did not match what Vercel Blob expects. The "attempted" object above shows what was tried.'
+            : undefined,
+      });
+    }
 
     return res.status(200).json({
       url:        blob.url,
@@ -71,13 +93,7 @@ export default async function handler(req, res) {
       sizeBytes:  buf.length,
     });
   } catch (err) {
-    // Surface useful detail. The SDK throws helpful messages for store-config mismatches.
-    return res.status(500).json({
-      error:    err.message || 'Upload failed',
-      hint:     /private store/i.test(err.message || '')
-        ? 'Your Vercel Blob store is set to private access. Switch it to public in the Vercel dashboard so the app can display images and PDFs without auth.'
-        : undefined,
-    });
+    return res.status(500).json({ error: err.message || 'Upload failed' });
   }
 }
 

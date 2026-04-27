@@ -150,7 +150,7 @@ function PricingTab({ buildingId, accent }) {
         const buf = await file.arrayBuffer();
         const r = await fetch("/api/upload-pdf", {
           method: "POST",
-          headers: { "x-building-id": buildingId, "x-doc-name": file.name.replace(".pdf", ""), "x-context": "pricing sheet or availability list" },
+          headers: { "x-building-id": buildingId, "x-doc-name": encodeURIComponent(file.name.replace(/\.pdf$/i, "")), "x-context": "pricing sheet or availability list" },
           body: buf,
         });
         const data = await r.json();
@@ -423,7 +423,7 @@ function PricingSection({ buildingId, accent }) {
         headers: {
           "Content-Type":   "application/pdf",
           "x-building-id":  buildingId,
-          "x-doc-name":     file.name.replace(/\.pdf$/i, ""),
+          "x-doc-name":     encodeURIComponent(file.name.replace(/\.pdf$/i, "")),
           "x-context":      "pricing sheet",
         },
         body: file,
@@ -506,7 +506,7 @@ function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, o
             "Content-Type":   file.type || "application/octet-stream",
             "x-building-id":  buildingId,
             "x-asset-kind":   kind,
-            "x-filename":     file.name,
+            "x-filename":     encodeURIComponent(file.name),
           },
           body: file,
         });
