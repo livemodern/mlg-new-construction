@@ -145,11 +145,12 @@ export default async function handler(req, res) {
       try {
         r = await fetch(folderUrl, FETCH_OPTS);
       } catch (e) {
-        const isTimeout = /aborted|timeout/i.test(e.message || '');
+        // Surface the actual underlying error so we can diagnose
         return res.status(504).json({
-          error: isTimeout
-            ? 'Dropbox folder did not respond within 30 seconds. The folder may be very large or Dropbox may be rate-limiting. Try again or use a Google Drive folder.'
-            : 'Dropbox fetch error: ' + e.message,
+          error: 'Dropbox fetch failed: ' + (e.message || 'unknown') + (e.code ? ' (' + e.code + ')' : ''),
+          rawCause:    e.cause?.message || null,
+          rawErrname:  e.name || null,
+          urlFormat:   folderUrl.includes('/scl/fo/') ? 'modern (scl/fo)' : 'legacy',
         });
       }
       if (!r.ok) {
