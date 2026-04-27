@@ -3,6 +3,7 @@
 // classify it via filename heuristics + AI for ambiguous PDFs, upload to Blob,
 // return categorized arrays for the caller to merge into the building record.
 import { put } from '@vercel/blob';
+import { getBlobToken } from './_blob-env.js';
 
 export const maxDuration = 300;
 
@@ -16,8 +17,8 @@ async function fetchAsBuffer(url) {
 }
 
 async function uploadToBlob(buildingId, kind, filename, buf, contentType) {
-  const TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!TOKEN) throw new Error('BLOB_READ_WRITE_TOKEN missing');
+  const TOKEN = getBlobToken();
+  if (!TOKEN) throw new Error('BLOB_READ_WRITE_TOKEN missing — make sure the Blob store is connected to this Vercel project');
   const folderMap = { floorplan: 'floorplans', rendering: 'renderings', brokerdoc: 'pdfs', pricing: 'pricing' };
   const safeName = filename.replace(/[^a-z0-9._-]/gi, '_');
   const path = 'buildings/' + buildingId + '/' + (folderMap[kind] || 'other') + '/' + safeName;

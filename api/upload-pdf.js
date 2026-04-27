@@ -1,5 +1,6 @@
 // api/upload-pdf.js — using @vercel/blob SDK
 import { put } from '@vercel/blob';
+import { getBlobToken } from './_blob-env.js';
 
 export const maxDuration = 300;
 
@@ -8,7 +9,8 @@ export default async function handler(req, res) {
   const buildingId = req.headers['x-building-id'] || 'unknown';
   const docName    = req.headers['x-doc-name']    || ('doc-' + Date.now());
   const context    = req.headers['x-context']     || '';
-  const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+  const BLOB_TOKEN = getBlobToken();
+  if (!BLOB_TOKEN) return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured. Make sure the Blob store is connected to this Vercel project and the deployment has been refreshed.' });
 
   try {
     const chunks = [];

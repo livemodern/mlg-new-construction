@@ -1,4 +1,7 @@
-// api/store-assets.js — downloads images + PDFs to Vercel Blob
+// api/store-assets.js — downloads images + PDFs to Vercel Blob via @vercel/blob SDK
+import { put } from '@vercel/blob';
+import { getBlobToken } from './_blob-env.js';
+
 export const maxDuration = 300;
 
 function getExt(url, ct) {
@@ -33,21 +36,16 @@ async function downloadFile(url) {
 }
 
 async function uploadToBlob(filename, buf, ct) {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
-  if (!token) return { error: 'BLOB_READ_WRITE_TOKEN not set' };
+  const token = getBlobToken();
+  if (!token) return { error: 'BLOB_READ_WRITE_TOKEN not set — connect a Blob store to this project' };
   try {
-    const r = await fetch('https://blob.vercel-storage.com/' + filename, {
-      method: 'PUT',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': ct,
-        'Content-Length': String(buf.byteLength),
-      },
-      body: buf,
+    const blob = await put(filename, Buffer.from(buf), {
+      access: 'public',
+      contentType: ct,
+      token,
+      addRandomSuffix: true,
     });
-    const json = await r.json();
-    if (!r.ok) return { error: 'Blob HTTP ' + r.status + ': ' + JSON.stringify(json).substring(0, 100) };
-    return json;
+    return blob;
   } catch(e) {
     return { error: 'Blob upload error: ' + e.message };
   }
@@ -62,7 +60,7 @@ export default async function handler(req, res) {
   const prefix  = 'buildings/' + buildingId + '/';
 
   console.log('[Assets] Starting:', images.length, 'images,', pdfs.length, 'PDFs for', buildingId);
-  console.log('[Assets] BLOB_TOKEN set:', !!process.env.BLOB_READ_WRITE_TOKEN);
+  console.log('[Assets] BLOB_TOKEN set:', !!getBlobToken());
 
   // Process images one at a time to avoid memory issues
   for (let i = 0; i < images.length; i++) {

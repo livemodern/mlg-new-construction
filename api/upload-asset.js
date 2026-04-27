@@ -4,6 +4,7 @@
 // Body: raw file bytes
 // Returns: { url, filename, kind, contentType }
 import { put } from '@vercel/blob';
+import { getBlobToken } from './_blob-env.js';
 
 export const maxDuration = 60;
 
@@ -31,10 +32,10 @@ export default async function handler(req, res) {
   const buildingId = req.headers['x-building-id'];
   const kind       = (req.headers['x-asset-kind'] || 'asset').toLowerCase();
   const filename   = safeName(req.headers['x-filename']);
-  const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+  const BLOB_TOKEN = getBlobToken();
 
   if (!buildingId)  return res.status(400).json({ error: 'x-building-id required' });
-  if (!BLOB_TOKEN)  return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured' });
+  if (!BLOB_TOKEN)  return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured. Make sure the Blob store is connected to this Vercel project and the deployment has been refreshed.' });
 
   const validKinds = ['floorplan', 'rendering', 'brokerdoc'];
   if (!validKinds.includes(kind)) {
