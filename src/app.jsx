@@ -150,7 +150,7 @@ function PricingTab({ buildingId, accent }) {
         const buf = await file.arrayBuffer();
         const r = await fetch("/api/upload-pdf", {
           method: "POST",
-          headers: { "x-building-id": buildingId, "x-doc-name": encodeURIComponent(file.name.replace(/\.pdf$/i, "")), "x-context": "pricing sheet or availability list" },
+          headers: { "x-building-id": String(buildingId).replace(/[^\x20-\x7E]/g, "_"), "x-doc-name": encodeURIComponent(file.name.replace(/\.pdf$/i, "")), "x-context": "pricing sheet or availability list" },
           body: buf,
         });
         const data = await r.json();
@@ -422,7 +422,7 @@ function PricingSection({ buildingId, accent }) {
         method: "POST",
         headers: {
           "Content-Type":   "application/pdf",
-          "x-building-id":  buildingId,
+          "x-building-id":  String(buildingId).replace(/[^\x20-\x7E]/g, "_"),
           "x-doc-name":     encodeURIComponent(file.name.replace(/\.pdf$/i, "")),
           "x-context":      "pricing sheet",
         },
@@ -499,13 +499,26 @@ function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, o
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       setProgress("Uploading " + (i + 1) + " of " + files.length + ": " + file.name);
+      // Sanitize header values — strip anything outside printable ASCII to avoid
+      // "string did not match the expected pattern" thrown by Headers validation.
+      const ascii = s => String(s == null ? "" : s).replace(/[^\x20-\x7E]/g, "_");
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      const inferType =
+        ext === "pdf"  ? "application/pdf"  :
+        ext === "jpg"  ? "image/jpeg"       :
+        ext === "jpeg" ? "image/jpeg"       :
+        ext === "png"  ? "image/png"        :
+        ext === "webp" ? "image/webp"       :
+        ext === "gif"  ? "image/gif"        :
+        "application/octet-stream";
+
       try {
         const r = await fetch("/api/upload-asset", {
           method: "POST",
           headers: {
-            "Content-Type":   file.type || "application/octet-stream",
-            "x-building-id":  buildingId,
-            "x-asset-kind":   kind,
+            "Content-Type":   inferType,
+            "x-building-id":  ascii(buildingId),
+            "x-asset-kind":   ascii(kind),
             "x-filename":     encodeURIComponent(file.name),
           },
           body: file,
@@ -529,7 +542,8 @@ function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, o
         }
         uploaded.push(entry);
       } catch (e) {
-        alert("Upload error for " + file.name + ": " + e.message);
+        console.error("[Upload] Failed", { name: file.name, type: file.type, size: file.size, errName: e.name, errMsg: e.message });
+        alert("Upload error for " + file.name + ": " + e.message + " (" + (e.name || "Error") + ")");
       }
     }
 
