@@ -859,6 +859,16 @@ function FloorPlanCard({ plan, accent, T }) {
             </div>
           </div>
         )}
+        {plan.priceFrom != null && (
+          <div style={{ fontSize: 13, marginTop: 4 }}>
+            <span style={{ color: T.textMuted }}>From </span>
+            <span style={{ color: accent, fontWeight: 600 }}>
+              {plan.priceFrom >= 1000000
+                ? "$" + (plan.priceFrom / 1000000).toFixed(2).replace(/\.?0+$/, "") + "M"
+                : "$" + plan.priceFrom.toLocaleString()}
+            </span>
+          </div>
+        )}
         {(plan.floors || plan.exposure) && (
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
             {[plan.floors, plan.exposure].filter(Boolean).join("  ·  ")}
