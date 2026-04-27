@@ -802,6 +802,7 @@ function ProjectView({ project, onEdit }) {
           const stats = [
             ["Units",         project.totalUnits],
             ["Floors",        project.totalFloors],
+            ["Bedrooms",      project.bedrooms],
             ["Developer",     project.developer],
             ["Architect",     project.architect],
             ["Est. Delivery", project.estimatedDelivery || "TBD"],
@@ -814,28 +815,32 @@ function ProjectView({ project, onEdit }) {
               borderRadius: 8,
               overflow: "hidden",
               background: T.bg,
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
             }}>
-              {stats.map(([k, v], i) => (
-                <div key={k} style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  padding: "10px 14px",
-                  borderBottom: i < stats.length - 1 ? "1px solid " + T.border : "none",
-                  gap: 12,
-                }}>
-                  <div style={{
-                    fontSize: 10, fontWeight: 700, color: T.textMuted,
-                    textTransform: "uppercase", letterSpacing: "0.06em",
-                    flexShrink: 0, paddingTop: 2,
-                  }}>{k}</div>
-                  <div style={{
-                    fontSize: 13, fontWeight: 500, color: T.text,
-                    textAlign: "right", lineHeight: 1.4,
-                    wordBreak: "break-word",
-                  }}>{String(v)}</div>
-                </div>
-              ))}
+              {stats.slice(0, 6).map(([k, v], i) => {
+                const col = i % 3;
+                const row = Math.floor(i / 3);
+                return (
+                  <div key={k} style={{
+                    padding: "9px 10px",
+                    borderRight: col < 2 ? "1px solid " + T.border : "none",
+                    borderTop:   row > 0 ? "1px solid " + T.border : "none",
+                    minWidth: 0,
+                  }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 700, color: T.textMuted,
+                      textTransform: "uppercase", letterSpacing: "0.06em",
+                      marginBottom: 3, whiteSpace: "nowrap",
+                      overflow: "hidden", textOverflow: "ellipsis",
+                    }}>{k}</div>
+                    <div style={{
+                      fontSize: 12, fontWeight: 500, color: T.text,
+                      lineHeight: 1.3, wordBreak: "break-word",
+                    }}>{String(v)}</div>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div style={{ display: "flex", gap: 0, marginTop: 12, borderTop: "1px solid " + T.border, overflowX: "auto" }}>
