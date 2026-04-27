@@ -23,6 +23,23 @@ function categorizeImage(check) {
   if (/view|intracoastal|ocean[-_]?view|water[-_]?view|sunset|sunrise|cityscape|marina/.test(check)) return 'Views';
   return null;
 }
+// Page-context fallback: when filename doesn't categorize, use the URL slug
+// of the page the image came from. Yoast sitemap groups images by page,
+// so an image listed under /amenities is virtually amenity-related even if
+// the filename is generic. Same for /residences, /location, etc.
+function categorizeFromPath(pageUrl) {
+  if (!pageUrl) return null;
+  let path;
+  try { path = new URL(pageUrl).pathname.toLowerCase(); }
+  catch { return null; }
+  if (/(\/team|\/staff|\/bio|\/leadership)/.test(path)) return null;
+  if (/(\/floor.?plan|\/floorplan|\/residence|\/penthouse|\/the.?home|\/interior|\/suite)/.test(path)) return 'Residences';
+  if (/(\/amenit|\/wellness|\/services|\/spa)/.test(path))                                              return 'Amenities';
+  if (/(\/arrival|\/lobby)/.test(path))                                                                   return 'Arrival';
+  if (/(\/location|\/neighborhood|\/vision|\/architectur|\/about)/.test(path))                          return 'Exterior';
+  return null; // home page, /gallery, /press, /downloads — no fallback, strict applies
+}
+
 // Block social-media tracking pixels and the like
 const SKIP_DOMAIN = /\/(social|facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest|whatsapp|google|adnxs|doubleclick)\./i;
 
@@ -103,8 +120,9 @@ function extractImages(html, baseUrl) {
       const check = (url + ' ' + alt).toLowerCase();
       if (BLOCK_PATTERNS.test(check) || SKIP_DOMAIN.test(url)) continue;
       if (/\d+x\d+/.test(url) && url.includes('thumbnail')) continue;
-      const cat = categorizeImage(check);
-      if (!cat) continue; // strict allow-list — uncategorizable images get dropped
+      let cat = categorizeImage(check);
+      if (!cat) cat = categorizeFromPath(baseUrl);
+      if (!cat) continue; // dropped — neither filename nor page slug recognized
       map.set(url, { url, caption: alt.substring(0, 120), category: cat });
     }
     for (const m of html.matchAll(/url\(["']?(https?:\/\/[^"')]+\.(?:jpg|jpeg|png|webp))["']?\)/gi)) {
@@ -112,8 +130,9 @@ function extractImages(html, baseUrl) {
       if (map.has(url)) continue;
       const check = url.toLowerCase();
       if (BLOCK_PATTERNS.test(check) || SKIP_DOMAIN.test(url)) continue;
-      const cat = categorizeImage(check);
-      if (!cat) continue; // CSS background junk usually has no useful filename — drop
+      let cat = categorizeImage(check);
+      if (!cat) cat = categorizeFromPath(baseUrl);
+      if (!cat) continue; // CSS background — dropped if neither filename nor page slug helps
       map.set(url, { url, caption: '', category: cat });
     }
   } catch {}
@@ -171,8 +190,9 @@ async function discoverFromSitemap(host, base) {
       if (imgMap.has(imgUrl)) continue;
       const lower = imgUrl.toLowerCase();
       if (BLOCK_PATTERNS.test(lower) || SKIP_DOMAIN.test(imgUrl)) continue;
-      const cat = categorizeImage(lower);
-      if (!cat) continue; // strict allow-list — drop if not categorizable
+      let cat = categorizeImage(lower);
+      if (!cat) cat = categorizeFromPath(locMatch[1].trim());
+      if (!cat) continue; // drop if neither filename nor page slug recognized
       imgMap.set(imgUrl, { url: imgUrl, caption: '', category: cat });
     }
   }
