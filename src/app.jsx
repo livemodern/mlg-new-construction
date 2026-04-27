@@ -398,6 +398,7 @@ function PricingSection({ buildingId, accent }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [unitCount, setUnitCount] = useState(null);
+  const [replaceExisting, setReplaceExisting] = useState(true);
 
   // Load current pricing count when this component mounts
   useEffect(() => {
@@ -452,19 +453,33 @@ function PricingSection({ buildingId, accent }) {
         return;
       }
 
-      // Merge with existing pricing
-      const existing = await fetch("/api/pricing?buildingId=" + buildingId).then(x => x.ok ? x.json() : []);
-      const existingUnits = Array.isArray(existing) ? existing : (existing.units || []);
-      const merged = [...existingUnits, ...newUnits];
+      // Build the units list to save:
+      //  - replaceExisting: just the new units (treat the PDF as a full snapshot)
+      //  - !replaceExisting: existing + new, but dedupe by unit number
+      //    so re-uploading the same sheet does NOT double up
+      let unitsToSave;
+      if (replaceExisting) {
+        unitsToSave = newUnits;
+      } else {
+        const existing = await fetch("/api/pricing?buildingId=" + buildingId).then(x => x.ok ? x.json() : []);
+        const existingUnits = Array.isArray(existing) ? existing : (existing.units || []);
+        const newKeys = new Set(newUnits.map(u => String(u.unit)));
+        const kept    = existingUnits.filter(u => !newKeys.has(String(u.unit)));
+        unitsToSave   = [...kept, ...newUnits];
+      }
+
       const post = await fetch("/api/pricing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buildingId, units: merged }),
+        body: JSON.stringify({ buildingId, units: unitsToSave }),
       });
       if (!post.ok) { setStatus("Pricing extracted but save failed."); setBusy(false); return; }
 
-      setUnitCount(merged.length);
-      setStatus("Added " + newUnits.length + " unit" + (newUnits.length === 1 ? "" : "s") + " to pricing.");
+      setUnitCount(unitsToSave.length);
+      setStatus(replaceExisting
+        ? "Replaced pricing with " + newUnits.length + " unit" + (newUnits.length === 1 ? "" : "s") + " from " + file.name + "."
+        : "Added " + newUnits.length + " unit" + (newUnits.length === 1 ? "" : "s") + " (existing pricing for those unit numbers was overwritten)."
+      );
     } catch (e) {
       console.error("[Pricing] Upload failed", { name: file.name, type: file.type, size: file.size, errName: e.name, errMsg: e.message });
       setStatus("Upload error: " + e.message + " (" + (e.name || "Error") + ")");
@@ -492,6 +507,16 @@ function PricingSection({ buildingId, accent }) {
         </div>
       </div>
       <div style={{ fontSize: 11, color: T.textMuted }}>PDF only. Pricing rows are extracted by AI and added to the Pricing tab.</div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 11, color: T.text, cursor: "pointer", userSelect: "none" }}>
+        <input
+          type="checkbox"
+          checked={replaceExisting}
+          onChange={e => setReplaceExisting(e.target.checked)}
+          disabled={busy}
+          style={{ margin: 0, accentColor: accent }}
+        />
+        <span><strong>Replace existing pricing</strong> {unitCount > 0 && <span style={{ color: T.textMuted }}>(deletes the current {unitCount} units, then adds the new ones)</span>}</span>
+      </label>
       {status && <div style={{ fontSize: 11, color: busy ? accent : (status.includes("failed") || status.includes("error") ? "#c62828" : "#2e7d32"), marginTop: 8 }}>{status}</div>}
     </div>
   );
