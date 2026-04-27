@@ -126,7 +126,7 @@ function RenderingGallery({ renderings, accent }) {
   );
 }
 
-function PricingTab({ buildingId, accent }) {
+function PricingTab({ buildingId, accent, floorPlans = [] }) {
   const [units, setUnits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -218,7 +218,7 @@ function PricingTab({ buildingId, accent }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: T.bgAlt }}>
-                {["Unit", "Floor", "Model", "Beds", "Baths", "Sq Ft", "Price", "Status"].map(h => (
+                {["Unit", "Floor", "Model", "Beds", "Baths", "A/C SF", "Price", "Status"].map(h => (
                   <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid " + T.border, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -228,7 +228,7 @@ function PricingTab({ buildingId, accent }) {
                 <tr key={u.id || i} style={{ borderBottom: "1px solid " + T.border, background: i % 2 === 0 ? T.bg : T.bgAlt }}>
                   <td style={{ padding: "10px 12px", fontWeight: 600 }}>{u.unit || "--"}</td>
                   <td style={{ padding: "10px 12px" }}>{u.floor || "--"}</td>
-                  <td style={{ padding: "10px 12px" }}>{u.model || "--"}</td>
+                  <td style={{ padding: "10px 12px" }}>{(() => { const fp = (floorPlans || []).find(p => p.name && (p.name === u.model || p.name === u.floorplanName)); return fp && fp.pdf ? <a href={fp.pdf} target="_blank" rel="noopener noreferrer" style={{ color: accent, textDecoration: "underline", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>{u.model}</a> : (u.model || "--"); })()}</td>
                   <td style={{ padding: "10px 12px" }}>{u.beds || "--"}</td>
                   <td style={{ padding: "10px 12px" }}>{u.baths || "--"}</td>
                   <td style={{ padding: "10px 12px" }}>{u.sqft ? u.sqft.toLocaleString() : "--"}</td>
@@ -1067,7 +1067,7 @@ function ProjectView({ project, onEdit }) {
         )}
 
         {tab === "Pricing" && (
-          <PricingTab buildingId={project.id || project.suggestedId} accent={accent} />
+          <PricingTab buildingId={project.id || project.suggestedId} accent={accent} floorPlans={project.floorPlans || []} />
         )}
 
         {tab === "Broker Toolkit" && (
