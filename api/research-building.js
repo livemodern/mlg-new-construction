@@ -3,7 +3,7 @@
 // Uses fetch() for all HTTP -- no require() needed
 export const maxDuration = 300;
 
-const PEOPLE_BLOCK = /headshot|portrait|\.?team|staff|executive|director|bio|author|speaker|ceo|president|founder|partner|employee|agent-photo|broker-photo/i;
+const PEOPLE_BLOCK = /headshot|portrait|\.?team|staff|executive|director|bio|author|speaker|ceo|president|founder|partner|employee|agent-photo|broker-photo|lifestyle|couple|family-portrait|crowd|guests|audience|model-shot|festive/i;
 const LOGO_BLOCK   = /logo|icon|favicon|badge|seal|watermark|sprite|btn-|button-|arrow|chevron/i;
 const SKIP_EXT     = /\/(social|facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest|whatsapp|google)\./i;
 
@@ -38,6 +38,34 @@ function toText(html) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function extractPDFs(html, baseUrl) {
+  // Find every <a href> pointing to a .pdf — categorize by filename keywords.
+  // Returns: [{ url, name, kind }] where kind is 'floorPlan' | 'brokerDoc'.
+  const map = new Map();
+  try {
+    const origin = new URL(baseUrl);
+    for (const m of html.matchAll(/href=["']([^"']+\.pdf[^"']*)["']/gi)) {
+      let url = m[1];
+      if (url.startsWith('//'))      url = 'https:' + url;
+      else if (url.startsWith('/'))  url = origin.protocol + '//' + origin.host + url;
+      else if (!url.startsWith('http')) continue;
+      if (map.has(url)) continue;
+      const lower = url.toLowerCase();
+      // Skip non-marketing junk
+      if (/wp-includes|wp-json|cookie|privacy|terms|disclaimer|legal|gdpr|accessibility/.test(lower)) continue;
+      // Decode + clean filename for the human-readable name
+      const filename = decodeURIComponent(url.split('/').pop().split('?')[0])
+        .replace(/\.pdf$/i, '')
+        .replace(/[-_+]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const kind = /floor.?plan|floorplan|residence.?plan|unit.?plan|layout|stack/i.test(lower) ? 'floorPlan' : 'brokerDoc';
+      map.set(url, { url, name: filename || 'Document', kind });
+    }
+  } catch {}
+  return Array.from(map.values());
 }
 
 function extractImages(html, baseUrl) {
@@ -205,7 +233,13 @@ export default async function handler(req, res) {
     console.log('[Research] Fetching', allUrls.length, 'pages from', host);
     const pages = await Promise.all(allUrls.map(async (pageUrl) => {
       const html = await fetchPage(pageUrl);
-      return html ? { url: pageUrl, text: toText(html).substring(0, 2500), images: extractImages(html, pageUrl) } : null;
+      if (!html) return null;
+      return {
+        url: pageUrl,
+        text: toText(html).substring(0, 2500),
+        images: extractImages(html, pageUrl),
+        pdfs: extractPDFs(html, pageUrl),
+      };
     }));
 
     const validPages = pages.filter(Boolean);
@@ -219,6 +253,17 @@ export default async function handler(req, res) {
     }
     const allImages = Array.from(allImagesMap.values());
     console.log('[Research] images: scraped=' + scrapedImgs.length + ' sitemap=' + sitemap.images.length + ' merged=' + allImages.length);
+
+    // Merge PDFs across all scraped pages. Many sites bury the broker package
+    // in a footer link or press kit page — this catches those static <a> tags.
+    const pdfMap = new Map();
+    for (const p of validPages) {
+      for (const pdf of (p.pdfs || [])) {
+        if (!pdfMap.has(pdf.url)) pdfMap.set(pdf.url, pdf);
+      }
+    }
+    const allPDFs = Array.from(pdfMap.values());
+    console.log('[Research] PDFs found:', allPDFs.length);
     console.log('[Research]', validPages.length, 'pages,', allImages.length, 'images');
 
     const siteContent = validPages.map(p => '\n=== ' + p.url + ' ===\n' + p.text).join('\n\n').substring(0, 12000);
@@ -437,7 +482,7 @@ export default async function handler(req, res) {
       const pa = CATEGORY_PRIORITY[a.category] ?? 9;
       const pb = CATEGORY_PRIORITY[b.category] ?? 9;
       return pa - pb;
-    }).slice(0, 30); // hard cap at 30 — generous, no AI cost since this is post-Claude
+    }).slice(0, 20); // hard cap at 20 — user spec; floor plans + top categories prioritized first
 
     // Split into floor plans vs renderings, applying any Claude captions
     const isFloorPlan = i => i.category === 'Floor Plans';
@@ -453,10 +498,28 @@ export default async function handler(req, res) {
       category: i.category,
     }));
 
+    // Merge in PDFs discovered via static <a href> link extraction:
+    //  - filename-categorized 'floorPlan' PDFs append to floorPlanImages
+    //  - everything else appends to brokerDocs (broker toolkit)
+    // Note: many luxury sites JS-render their downloads pages — for those,
+    // this returns empty and the user uploads manually via Files & Media.
+    const pdfFloorPlans = allPDFs.filter(p => p.kind === 'floorPlan').map(p => ({
+      name:  p.name,
+      thumb: p.url,
+      pdf:   p.url,
+    }));
+    const pdfBrokerDocs = allPDFs.filter(p => p.kind === 'brokerDoc').map(p => ({
+      name: p.name,
+      type: 'document',
+      url:  p.url,
+    }));
+
     building.renderings      = renderingItems;
-    building.floorPlanImages = floorPlanItems;
+    building.floorPlanImages = [...floorPlanItems, ...pdfFloorPlans];
+    building.brokerDocs      = pdfBrokerDocs;
     building.pagesScraped    = validPages.length;
     building.rawImageCount   = allImages.length;
+    building.rawPDFCount     = allPDFs.length;
 
     // Map to our canonical field names
     const project = {
@@ -502,10 +565,14 @@ export default async function handler(req, res) {
       renderings:        building.renderings || [],
       floorPlanImages:   building.floorPlanImages || [],
       floorPlans:        [],
-      brokerDocs:        [],
+      brokerDocs:        building.brokerDocs || [],
     };
 
-    console.log('[Research] OK:', project.suggestedName, '| renderings:', project.renderings.length, '| floor plans:', project.floorPlanImages.length, '| iterations:', itr);
+    console.log('[Research] OK:', project.suggestedName,
+      '| renderings:', project.renderings.length,
+      '| floor plans:', project.floorPlanImages.length,
+      '| broker docs:', project.brokerDocs.length,
+      '| iterations:', itr);
     return res.status(200).json({ project });
 
   } catch (err) {
