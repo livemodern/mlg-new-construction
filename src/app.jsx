@@ -802,6 +802,211 @@ function EditModal({ building, onSave, onClose }) {
   );
 }
 
+
+// ──────────────────────────────────────────────────────────
+// Phase C/D: unified rendering components for floor plans
+// and amenities. Each accepts the canonical KV schema set
+// up by the Phase A migration.
+// ──────────────────────────────────────────────────────────
+
+function FloorPlanCard({ plan, accent, T }) {
+  const matchingUnits = Array.isArray(plan.units) ? plan.units : [];
+  const interior = plan.interiorSF ?? plan.sqft ?? null;
+  const exterior = plan.exteriorSF ?? plan.terraceSF ?? null;
+  const total    = plan.totalSF ?? (interior != null && exterior != null ? interior + exterior : null);
+
+  return (
+    <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <div style={{ aspectRatio: "4 / 3", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+        {plan.thumb ? (
+          <img src={plan.thumb} alt={plan.name || "Floor plan"} style={{ width: "100%", height: "100%", objectFit: "contain", background: "white" }} />
+        ) : plan.pdf ? (
+          <a href={plan.pdf} target="_blank" rel="noreferrer" style={{ color: accent, fontSize: 13, textDecoration: "none", padding: 16, textAlign: "center" }}>
+            <div style={{ fontSize: 32, marginBottom: 6 }}>📄</div>
+            <div>View floor plan PDF</div>
+          </a>
+        ) : (
+          <div style={{ color: T.textMuted, fontSize: 12 }}>No image yet</div>
+        )}
+      </div>
+      <div style={{ padding: "12px 14px", flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ fontWeight: 600, fontSize: 15, lineHeight: 1.25 }}>
+          {plan.pdf ? (
+            <a href={plan.pdf} target="_blank" rel="noreferrer" style={{ color: T.text, textDecoration: "none" }}>{plan.name || "—"}</a>
+          ) : (plan.name || "—")}
+        </div>
+        {(plan.beds != null || plan.baths != null) && (
+          <div style={{ fontSize: 12, color: T.textSub }}>
+            {plan.beds != null ? plan.beds + " BR" : ""}
+            {plan.den ? " + Den" : ""}
+            {plan.beds != null && plan.baths != null ? "  ·  " : ""}
+            {plan.baths != null ? plan.baths + " BA" : ""}
+          </div>
+        )}
+        {(interior != null || exterior != null || total != null) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 4, fontSize: 12, color: T.textSub }}>
+            <div>
+              <div style={{ fontSize: 9, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>A/C</div>
+              <div style={{ fontWeight: 500 }}>{interior ? interior.toLocaleString() : "—"}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Terr.</div>
+              <div style={{ fontWeight: 500 }}>{exterior ? exterior.toLocaleString() : "—"}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 9, color: T.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Total</div>
+              <div style={{ fontWeight: 500 }}>{total ? total.toLocaleString() : "—"}</div>
+            </div>
+          </div>
+        )}
+        {(plan.floors || plan.exposure) && (
+          <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4 }}>
+            {[plan.floors, plan.exposure].filter(Boolean).join("  ·  ")}
+          </div>
+        )}
+        {matchingUnits.length > 0 && (
+          <div style={{ fontSize: 11, color: T.textSub, marginTop: 6, paddingTop: 6, borderTop: "1px dashed " + T.border }}>
+            <span style={{ color: T.textMuted }}>Units: </span>
+            {matchingUnits.slice(0, 8).join(", ")}
+            {matchingUnits.length > 8 ? "…" : ""}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FloorPlansTab({ plans = [], accent, T, buildingId }) {
+  const [uploading, setUploading] = useState(false);
+  const [status, setStatus] = useState(null);
+  const inputRef = useRef(null);
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    setStatus("Processing " + files.length + " file(s)…");
+
+    try {
+      const { upload } = await import("https://esm.sh/@vercel/blob@0.27.3/client");
+      const { PDFDocument } = await import("https://esm.sh/pdf-lib@1.17.1");
+
+      let okCount = 0, errCount = 0;
+      for (const file of files) {
+        try {
+          // Strip disclaimer page if PDF has more than one page
+          const buf = await file.arrayBuffer();
+          let outBytes = new Uint8Array(buf);
+          if (file.type === "application/pdf") {
+            const doc = await PDFDocument.load(buf);
+            if (doc.getPageCount() > 1) {
+              const stripped = await PDFDocument.create();
+              const [last] = await stripped.copyPages(doc, [doc.getPageCount() - 1]);
+              stripped.addPage(last);
+              outBytes = await stripped.save();
+            }
+          }
+          const cleanName = file.name.replace(/\.[a-z]+$/i, "").replace(/[^a-zA-Z0-9-_]/g, "-");
+          const blobPath = "buildings/" + buildingId + "/floorplans/" + cleanName + ".pdf";
+          const blob = await upload(blobPath, new Blob([outBytes], { type: "application/pdf" }), {
+            access: "public",
+            handleUploadUrl: "/api/upload-token",
+            contentType: "application/pdf",
+            clientPayload: JSON.stringify({ buildingId, kind: "floorplan", name: file.name }),
+          });
+          // Now ask the server to extract metadata via Claude
+          setStatus("Extracting metadata from " + file.name + "…");
+          const r = await fetch("/api/upload-pdf", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "floorplan", blobUrl: blob.url, buildingId, sourceName: file.name }),
+          });
+          if (!r.ok) throw new Error("Extraction failed: " + r.status);
+          okCount++;
+        } catch (err) {
+          errCount++;
+          console.error("Floor plan upload failed for", file.name, err);
+        }
+      }
+      setStatus("Done — " + okCount + " ok" + (errCount ? ", " + errCount + " failed" : ""));
+      // Reload after a beat so the user sees the success status
+      setTimeout(() => { window.location.reload(); }, 1500);
+    } catch (e) {
+      setStatus("Error: " + e.message);
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  const empty = !plans || plans.length === 0;
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: T.textSub }}>
+          {empty ? "No floor plans loaded yet." : plans.length + " floor plan" + (plans.length === 1 ? "" : "s")}
+        </div>
+        <div>
+          <input ref={inputRef} type="file" accept="application/pdf" multiple onChange={handleFiles} style={{ display: "none" }} disabled={uploading} />
+          <button onClick={() => inputRef.current && inputRef.current.click()} disabled={uploading} style={{ padding: "6px 12px", fontSize: 12, background: accent, color: "white", border: 0, borderRadius: 6, cursor: uploading ? "wait" : "pointer", opacity: uploading ? 0.6 : 1 }}>
+            {uploading ? "Working…" : "Upload PDFs"}
+          </button>
+        </div>
+      </div>
+      {status && (
+        <div style={{ fontSize: 12, color: T.textSub, marginBottom: 12, padding: "8px 12px", background: T.bgCard, border: "1px solid " + T.border, borderRadius: 6 }}>{status}</div>
+      )}
+      {empty ? (
+        <div style={{ color: T.textMuted, fontStyle: "italic", fontSize: 14, padding: "32px 0", textAlign: "center" }}>
+          Drop PDFs above to add floor plans. The system will strip the disclaimer page, host the file, and extract beds/baths/sq footage automatically.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+          {plans.map((plan, i) => (
+            <FloorPlanCard key={i} plan={plan} accent={accent} T={T} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AmenitiesTab({ amenities = [], accent, T }) {
+  if (!amenities || amenities.length === 0) {
+    return (
+      <div style={{ color: T.textMuted, fontStyle: "italic", fontSize: 14, padding: "32px 0", textAlign: "center" }}>
+        No amenities listed yet.
+      </div>
+    );
+  }
+  // Normalize: handle both flat string array and {category, icon, items} shape
+  const groups = (typeof amenities[0] === "string")
+    ? [{ category: "Amenities", icon: "✦", items: amenities }]
+    : amenities.map(a => ({ category: a.category || "Amenities", icon: a.icon || "✦", items: a.items || [] }));
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+      {groups.map((g, i) => (
+        <div key={i} style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: 10, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: accent, marginBottom: 12, display: "flex", alignItems: "center", gap: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            <span style={{ fontSize: 16 }}>{g.icon}</span>
+            <span>{g.category}</span>
+          </div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
+            {g.items.map((item, j) => (
+              <li key={j} style={{ fontSize: 13, color: T.textSub, display: "flex", gap: 8, lineHeight: 1.45 }}>
+                <span style={{ color: accent, flexShrink: 0, fontWeight: 600 }}>•</span>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 function ProjectView({ project, onEdit }) {
   const TABS = ["Overview", "Floor Plans", "Amenities", "Gallery", "Pricing", "Broker Toolkit"];
   const [tab, setTab] = useState("Overview");
@@ -980,86 +1185,11 @@ function ProjectView({ project, onEdit }) {
         )}
 
         {tab === "Floor Plans" && (
-          <div>
-            {(!project.floorPlanImages || project.floorPlanImages.length === 0) && (!project.floorPlans || project.floorPlans.length === 0) ? (
-              <div style={{ color: T.textMuted, fontStyle: "italic", fontSize: 14, padding: "32px 0", textAlign: "center" }}>No floor plans loaded yet.</div>
-            ) : (
-              <div>
-                {project.floorPlanImages && project.floorPlanImages.length > 0 && (() => {
-                  const fpi = project.floorPlanImages;
-                  const isNewFmt = fpi[0] && fpi[0].thumb !== undefined;
-                  if (isNewFmt) {
-                    return (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 20 }}>
-                        {fpi.map((fp, i) => (
-                          <a key={i} href={fp.pdf} target="_blank" rel="noreferrer" style={{ textDecoration: "none", borderRadius: 8, overflow: "hidden", border: "1px solid " + T.border, background: T.bgCard, display: "block" }}>
-                            {fp.thumb && <img src={fp.thumb} alt={fp.name} style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }} onError={e => { e.target.style.display = "none"; }} />}
-                            <div style={{ padding: "8px 12px" }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{fp.name}</div>
-                              {fp.pdf && <div style={{ fontSize: 11, color: accent, marginTop: 2 }}>View PDF</div>}
-                            </div>
-                          </a>
-                        ))}
-                      </div>
-                    );
-                  }
-                  return <RenderingGallery renderings={fpi} accent={accent} />;
-                })()}
-                {project.floorPlans && project.floorPlans.length > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    {project.floorPlans.map((plan, i) => (
-                      <div key={i} style={{ padding: "14px 16px", border: "1px solid " + T.border, borderRadius: 8, marginBottom: 8, background: T.bgCard, display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{plan.name || plan.model}</div>
-                          <div style={{ fontSize: 12, color: T.textSub, marginTop: 4 }}>
-                            {[plan.beds && String(plan.beds), plan.baths && String(plan.baths), (plan.sqft || plan.interiorSF) && String(plan.sqft || plan.interiorSF) + " SF", plan.exposure].filter(Boolean).join(" / ")}
-                          </div>
-                        </div>
-                        {(plan.price || plan.priceFrom) && (
-                          <div style={{ fontSize: 14, fontWeight: 700, color: accent }}>{fmt(plan.price || plan.priceFrom)}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <FloorPlansTab plans={project.floorPlans || []} accent={accent} T={T} buildingId={project.id || project.suggestedId} />
         )}
 
         {tab === "Amenities" && (
-          <div>
-            {(!project.amenities || project.amenities.length === 0) ? (
-              <div style={{ color: T.textMuted, fontStyle: "italic", fontSize: 14, padding: "32px 0", textAlign: "center" }}>No amenities listed yet.</div>
-            ) : typeof project.amenities[0] === "string" ? (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 8 }}>
-                {project.amenities.map((a, i) => (
-                  <div key={i} style={{ padding: "12px 16px", background: T.bgCard, border: "1px solid " + T.border, borderRadius: 8, fontSize: 13, color: T.text, display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ color: accent, fontSize: 12 }}>+</span> {a}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                {project.amenities.map((group, i) => (
-                  <div key={i}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, paddingBottom: 8, borderBottom: "1px solid " + T.border }}>
-                      {group.icon && <span style={{ fontSize: 16 }}>{group.icon}</span>}
-                      <span style={{ textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11, fontWeight: 800, color: T.textMuted }}>{group.category}</span>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 6 }}>
-                      {(group.items || []).map((item, j) => (
-                        <div key={j} style={{ padding: "10px 14px", background: T.bgCard, border: "1px solid " + T.border, borderRadius: 8, fontSize: 13, color: T.text, display: "flex", alignItems: "flex-start", gap: 10, lineHeight: 1.4 }}>
-                          <span style={{ color: accent, fontSize: 11, flexShrink: 0, marginTop: 2 }}>+</span>
-                          <span>{item}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <AmenitiesTab amenities={project.amenities || []} accent={accent} T={T} />
         )}
 
         {tab === "Gallery" && (
