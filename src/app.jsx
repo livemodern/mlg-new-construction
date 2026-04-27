@@ -415,21 +415,35 @@ function PricingSection({ buildingId, accent }) {
     if (!buildingId) { alert("Save the building first."); return; }
     if (!file) return;
     setBusy(true);
-    setStatus("Uploading and extracting pricing from " + file.name + "…");
+    setStatus("Uploading " + file.name + "…");
     try {
-      // Reuse existing /api/upload-pdf which extracts pricing via Claude
+      // Step 1: direct browser-to-Blob upload, bypassing the 4.5MB serverless
+      // body limit and avoiding the iOS Safari Headers-validation issue.
+      const { upload } = await import("@vercel/blob/client");
+      const safeFilename = file.name.replace(/[^a-z0-9._-]/gi, "_");
+      const blobPath = "buildings/" + buildingId + "/pricing/" + safeFilename;
+      const blob = await upload(blobPath, file, {
+        access: "public",
+        contentType: "application/pdf",
+        handleUploadUrl: "/api/upload-token",
+        clientPayload: JSON.stringify({ buildingId, kind: "pricing", originalName: file.name }),
+      });
+
+      // Step 2: ask the server to extract pricing from that blob URL.
+      // The PDF bytes never go through the function — only the URL is sent.
+      setStatus("Extracting pricing rows from " + file.name + "…");
       const r = await fetch("/api/upload-pdf", {
         method: "POST",
-        headers: {
-          "Content-Type":   "application/pdf",
-          "x-building-id":  String(buildingId).replace(/[^\x20-\x7E]/g, "_"),
-          "x-doc-name":     encodeURIComponent(file.name.replace(/\.pdf$/i, "")),
-          "x-context":      "pricing sheet",
-        },
-        body: file,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl:    blob.url,
+          buildingId,
+          docName:    file.name.replace(/\.pdf$/i, ""),
+          context:    "pricing sheet or availability list",
+        }),
       });
       const j = await r.json();
-      if (!r.ok) { setStatus("Upload failed: " + (j.error || r.status)); setBusy(false); return; }
+      if (!r.ok) { setStatus("Extraction failed: " + (j.error || r.status)); setBusy(false); return; }
 
       const newUnits = (j.extracted?.pricing || []).map((u, i) => ({ ...u, id: u.id || ("upload-" + Date.now() + "-" + i) }));
       if (!newUnits.length) {
@@ -452,7 +466,8 @@ function PricingSection({ buildingId, accent }) {
       setUnitCount(merged.length);
       setStatus("Added " + newUnits.length + " unit" + (newUnits.length === 1 ? "" : "s") + " to pricing.");
     } catch (e) {
-      setStatus("Upload error: " + e.message);
+      console.error("[Pricing] Upload failed", { name: file.name, type: file.type, size: file.size, errName: e.name, errMsg: e.message });
+      setStatus("Upload error: " + e.message + " (" + (e.name || "Error") + ")");
     }
     setBusy(false);
     if (fileRef.current) fileRef.current.value = "";
