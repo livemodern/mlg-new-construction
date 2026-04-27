@@ -10,13 +10,18 @@ const SKIP_EXT     = /\/(social|facebook|twitter|instagram|linkedin|youtube|tikt
 async function fetchPage(url) {
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 12000);
     const r = await fetch(url, {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,*/*',
-        'Referer': url,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'none',
+        'Upgrade-Insecure-Requests': '1',
       },
       redirect: 'follow',
     });
@@ -78,13 +83,44 @@ export default async function handler(req, res) {
   try {
     const base = new URL(url.startsWith('http') ? url : 'https://' + url);
     const host = base.hostname;
-    const paths = ['/', '/residences', '/amenities', '/team', '/contact', '/neighborhood',
-      '/architecture-design', '/press', '/location', '/about', '/interiors', '/gallery',
-      '/penthouses', '/availability'];
 
-    console.log('[Research] Fetching from', host);
-    const pages = await Promise.all(paths.map(async (path) => {
-      const pageUrl = base.protocol + '//' + host + path;
+    // Always try these common paths
+    const seedPaths = [
+      '/', '/residences', '/the-residences', '/amenities', '/team', '/contact',
+      '/neighborhood', '/architecture-design', '/press', '/media', '/location',
+      '/about', '/interiors', '/gallery', '/photo-gallery', '/photos',
+      '/penthouses', '/availability', '/floor-plans', '/floorplans', '/services',
+    ];
+    const seedUrls = new Set(seedPaths.map(p => base.protocol + '//' + host + p));
+
+    // Also discover internal links from the home page (covers sites like Berkeley
+    // that use non-standard slugs like /photo-gallery/ instead of /gallery/)
+    const homeUrl  = base.protocol + '//' + host + '/';
+    const homeHtml = await fetchPage(homeUrl);
+    if (homeHtml) {
+      for (const m of homeHtml.matchAll(/href=["']([^"'#?]+)["']/gi)) {
+        let u = m[1];
+        if (!u || u.startsWith('mailto:') || u.startsWith('tel:') || /\.(pdf|jpg|jpeg|png|webp|gif|svg|css|js|zip|mp4)(\?|$)/i.test(u)) continue;
+        if (u.startsWith('/'))      u = base.protocol + '//' + host + u;
+        else if (!u.startsWith('http')) continue;
+        try {
+          const parsed = new URL(u);
+          if (parsed.hostname !== host) continue;
+          // Drop trailing slash for dedup, then add back
+          const clean = parsed.protocol + '//' + parsed.host + parsed.pathname.replace(/\/+$/, '') + (parsed.pathname.endsWith('/') || parsed.pathname === '' ? '' : '');
+          // Only follow links whose path looks like content (not legal/forms)
+          const path = parsed.pathname.toLowerCase();
+          if (/(privacy|terms|disclaimer|cookie|accessibility|sitemap|broker-portal|login|register|appointment|subscribe|cart|account|legal)/i.test(path)) continue;
+          seedUrls.add(clean.endsWith('/') ? clean : clean + '/');
+        } catch {}
+      }
+    }
+
+    // Cap to a reasonable number to keep total fetch time bounded
+    const allUrls = Array.from(seedUrls).slice(0, 25);
+
+    console.log('[Research] Fetching', allUrls.length, 'pages from', host);
+    const pages = await Promise.all(allUrls.map(async (pageUrl) => {
       const html = await fetchPage(pageUrl);
       return html ? { url: pageUrl, text: toText(html).substring(0, 5000), images: extractImages(html, pageUrl) } : null;
     }));
@@ -244,9 +280,26 @@ export default async function handler(req, res) {
     }
 
     if (!building.images || !building.images.length) building.images = allImages.slice(0, 40);
-    building.renderings = (building.images || []).map(i => ({ url: i.url, caption: i.caption, category: i.category }));
-    building.pagesScraped  = validPages.length;
-    building.rawImageCount = allImages.length;
+
+    // Split scraped images by category — Floor-Plan-classified ones go to
+    // floorPlanImages (the field that powers the Floor Plans tab); everything
+    // else stays in renderings (the field that powers the Gallery tab).
+    const isFloorPlan = i => i.category === 'Floor Plans';
+    const floorPlanItems = (building.images || []).filter(isFloorPlan).map(i => ({
+      name:  i.caption || (i.url.split('/').pop() || 'Floor Plan').replace(/\.[^.]+$/, ''),
+      thumb: i.url,
+      pdf:   i.url, // for image-based plans, thumb and target are the same
+    }));
+    const renderingItems = (building.images || []).filter(i => !isFloorPlan(i)).map(i => ({
+      url:      i.url,
+      caption:  i.caption,
+      category: i.category,
+    }));
+
+    building.renderings      = renderingItems;
+    building.floorPlanImages = floorPlanItems;
+    building.pagesScraped    = validPages.length;
+    building.rawImageCount   = allImages.length;
 
     // Map to our canonical field names
     const project = {
@@ -290,12 +343,12 @@ export default async function handler(req, res) {
       keyFacts:          building.keyFacts || [],
       amenities:         building.amenities || [],
       renderings:        building.renderings || [],
-      floorPlanImages:   [],
+      floorPlanImages:   building.floorPlanImages || [],
       floorPlans:        [],
       brokerDocs:        [],
     };
 
-    console.log('[Research] OK:', project.suggestedName, '| images:', project.renderings.length, '| iterations:', itr);
+    console.log('[Research] OK:', project.suggestedName, '| renderings:', project.renderings.length, '| floor plans:', project.floorPlanImages.length, '| iterations:', itr);
     return res.status(200).json({ project });
 
   } catch (err) {
