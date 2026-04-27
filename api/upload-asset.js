@@ -1,8 +1,10 @@
 // api/upload-asset.js
-// Generic file upload to Vercel Blob.
+// Generic file upload to Vercel Blob via the official @vercel/blob SDK.
 // Headers: x-building-id, x-asset-kind ("floorplan" | "rendering" | "brokerdoc"), x-filename
 // Body: raw file bytes
 // Returns: { url, filename, kind, contentType }
+import { put } from '@vercel/blob';
+
 export const maxDuration = 60;
 
 export const config = {
@@ -51,30 +53,30 @@ export default async function handler(req, res) {
     if (buf.length > 50 * 1024 * 1024) return res.status(413).json({ error: 'File too large (max 50MB)' });
 
     const contentType = inferContentType(filename, req.headers['content-type']);
-    const blobPath    = 'buildings/' + buildingId + '/' + subfolder + '/' + Date.now() + '-' + filename;
+    const blobPath    = 'buildings/' + buildingId + '/' + subfolder + '/' + filename;
 
-    const blobRes = await fetch('https://blob.vercel-storage.com/' + blobPath, {
-      method: 'PUT',
-      headers: {
-        'Authorization': 'Bearer ' + BLOB_TOKEN,
-        'Content-Type':  contentType,
-        'x-content-type': contentType,
-      },
-      body: buf,
+    const blob = await put(blobPath, buf, {
+      access: 'public',
+      contentType,
+      token: BLOB_TOKEN,
+      addRandomSuffix: true, // avoid collisions if same filename uploaded twice
     });
-    const blobData = await blobRes.json();
-    if (!blobRes.ok) {
-      return res.status(500).json({ error: 'Blob HTTP ' + blobRes.status + ': ' + JSON.stringify(blobData).substring(0, 200) });
-    }
 
     return res.status(200).json({
-      url:        blobData.url,
+      url:        blob.url,
       filename,
       kind,
       contentType,
       sizeBytes:  buf.length,
     });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    // Surface useful detail. The SDK throws helpful messages for store-config mismatches.
+    return res.status(500).json({
+      error:    err.message || 'Upload failed',
+      hint:     /private store/i.test(err.message || '')
+        ? 'Your Vercel Blob store is set to private access. Switch it to public in the Vercel dashboard so the app can display images and PDFs without auth.'
+        : undefined,
+    });
   }
 }
+

@@ -1,7 +1,9 @@
 // api/import-from-folder.js
-// Take a Drive or Dropbox folder URL, enumerate it, download each file,
+// Take a Drive folder URL, enumerate it, download each file,
 // classify it via filename heuristics + AI for ambiguous PDFs, upload to Blob,
 // return categorized arrays for the caller to merge into the building record.
+import { put } from '@vercel/blob';
+
 export const maxDuration = 300;
 
 async function fetchAsBuffer(url) {
@@ -18,15 +20,14 @@ async function uploadToBlob(buildingId, kind, filename, buf, contentType) {
   if (!TOKEN) throw new Error('BLOB_READ_WRITE_TOKEN missing');
   const folderMap = { floorplan: 'floorplans', rendering: 'renderings', brokerdoc: 'pdfs', pricing: 'pricing' };
   const safeName = filename.replace(/[^a-z0-9._-]/gi, '_');
-  const path = 'buildings/' + buildingId + '/' + (folderMap[kind] || 'other') + '/' + Date.now() + '-' + safeName;
-  const r = await fetch('https://blob.vercel-storage.com/' + path, {
-    method: 'PUT',
-    headers: { 'Authorization': 'Bearer ' + TOKEN, 'Content-Type': contentType, 'x-content-type': contentType },
-    body: buf,
+  const path = 'buildings/' + buildingId + '/' + (folderMap[kind] || 'other') + '/' + safeName;
+  const blob = await put(path, buf, {
+    access: 'public',
+    contentType,
+    token: TOKEN,
+    addRandomSuffix: true,
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error('Blob ' + r.status + ': ' + JSON.stringify(j).substring(0, 100));
-  return j.url;
+  return blob.url;
 }
 
 // Heuristic categorization based on filename. Returns kind or null if uncertain.
