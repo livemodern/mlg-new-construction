@@ -114,6 +114,19 @@ export default async function handler(req, res) {
   if (!folderUrl)  return res.status(400).json({ error: 'folderUrl required' });
   if (!buildingId) return res.status(400).json({ error: 'buildingId required' });
 
+  // Drive-only for now. Dropbox shared links are client-rendered and
+  // actively block scraping; reliable Dropbox import would need OAuth.
+  if (!/drive\.google\.com\/(drive\/folders|file\/d|open\?id=)/i.test(folderUrl)) {
+    if (/dropbox\.com/i.test(folderUrl)) {
+      return res.status(400).json({
+        error: 'Dropbox folders are not currently supported. Move the files to a Google Drive folder shared as "Anyone with the link", and paste that URL instead.',
+      });
+    }
+    return res.status(400).json({
+      error: 'Only Google Drive folder URLs are supported. Expected format: https://drive.google.com/drive/folders/...',
+    });
+  }
+
   try {
     // Step 1: enumerate the folder using the existing dropbox-import logic
     const proto = req.headers['x-forwarded-proto'] || 'https';

@@ -284,9 +284,22 @@ function FolderImporter({ buildingId, data, set, accent }) {
   const [status, setStatus] = useState("");
   const [result, setResult] = useState(null);
 
+  const isDriveUrl = u => /drive\.google\.com\/(drive\/folders|file\/d|open\?id=)/i.test(u);
+  const isDropboxUrl = u => /dropbox\.com/i.test(u);
+
   async function handleImport() {
     if (!buildingId) { alert("Save the building first, then import."); return; }
-    if (!url.trim())  { alert("Paste a Dropbox or Google Drive folder URL."); return; }
+    const trimmed = url.trim();
+    if (!trimmed)  { alert("Paste a Google Drive folder URL."); return; }
+    if (isDropboxUrl(trimmed)) {
+      setStatus("Dropbox folders aren't supported yet — Dropbox actively blocks scraping. Move the files to a Google Drive folder for now.");
+      return;
+    }
+    if (!isDriveUrl(trimmed)) {
+      setStatus("That doesn't look like a Google Drive folder URL. Expected: https://drive.google.com/drive/folders/...");
+      return;
+    }
+
     setBusy(true);
     setStatus("Enumerating folder and classifying files… this can take a minute.");
     setResult(null);
@@ -294,7 +307,7 @@ function FolderImporter({ buildingId, data, set, accent }) {
       const r = await fetch("/api/import-from-folder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderUrl: url.trim(), buildingId }),
+        body: JSON.stringify({ folderUrl: trimmed, buildingId }),
       });
       const j = await r.json();
       if (!r.ok) {
@@ -343,17 +356,17 @@ function FolderImporter({ buildingId, data, set, accent }) {
   return (
     <div style={{ background: "#f0f7fa", border: "1px solid #b8d8e3", borderRadius: 10, padding: 14 }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: T.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
-        Auto-Import from Drive or Dropbox
+        Auto-Import from Google Drive
       </div>
       <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
-        Paste a shared folder URL. Files are auto-categorized as floor plans, renderings, broker docs, or price sheets, then uploaded. Up to 12 files per run.
+        Paste a shared Drive folder URL. Files are auto-categorized as floor plans, renderings, broker docs, or price sheets, then uploaded. Up to 12 files per run. Folder must be shared as &ldquo;Anyone with the link.&rdquo;
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input
           type="url"
           value={url}
           onChange={e => setUrl(e.target.value)}
-          placeholder="https://drive.google.com/drive/folders/... or https://dropbox.com/scl/fo/..."
+          placeholder="https://drive.google.com/drive/folders/..."
           disabled={busy}
           style={{ flex: 1, minWidth: 200, padding: "9px 12px", borderRadius: 6, border: "1px solid " + T.border, fontSize: 13, color: T.text, background: T.bg, fontFamily: "inherit" }}
         />
@@ -366,7 +379,7 @@ function FolderImporter({ buildingId, data, set, accent }) {
           {busy ? "Importing…" : "Import"}
         </button>
       </div>
-      {status && <div style={{ fontSize: 12, color: busy ? accent : (status.startsWith("Import failed") || status.startsWith("Import error") ? "#c62828" : "#2e7d32"), marginTop: 10 }}>{status}</div>}
+      {status && <div style={{ fontSize: 12, color: busy ? accent : (status.startsWith("Import failed") || status.startsWith("Import error") || status.includes("aren't supported") || status.includes("doesn't look") ? "#c62828" : "#2e7d32"), marginTop: 10 }}>{status}</div>}
       {result?.categorized && (
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10, fontSize: 12, color: T.textSub }}>
           <span><strong>{result.categorized.floorPlanImages}</strong> floor plans</span>
