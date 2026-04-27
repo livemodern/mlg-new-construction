@@ -75,6 +75,73 @@ function extractImages(html, baseUrl) {
   return Array.from(map.values()).filter(i => !i.url.includes('base64') && !i.url.includes('placeholder'));
 }
 
+// Pull canonical page URLs and inline image references from a Yoast/WordPress
+// sitemap. Many WordPress real-estate sites (Alba, Berkeley, etc.) generate
+// these, and they list every page on the site PLUS the images on each page —
+// including JS-rendered ones the scraper can't otherwise see. A massive quality
+// lever with zero token cost.
+async function discoverFromSitemap(host, base) {
+  const tryUrls = [
+    base.protocol + '//' + host + '/sitemap_index.xml',
+    base.protocol + '//' + host + '/sitemap.xml',
+  ];
+
+  let xml = null;
+  for (const u of tryUrls) {
+    const fetched = await fetchPage(u);
+    if (fetched && fetched.includes('<')) { xml = fetched; break; }
+  }
+  if (!xml) return { pages: [], images: [] };
+
+  // sitemap_index.xml is a sitemap-of-sitemaps — recurse one level
+  let pageXml = xml;
+  const subMatches = [...xml.matchAll(/<sitemap>[\s\S]*?<loc>\s*([^<]+?)\s*<\/loc>[\s\S]*?<\/sitemap>/gi)];
+  if (subMatches.length > 0) {
+    const subUrls = subMatches.map(m => m[1].trim()).slice(0, 5);
+    const subXmls = await Promise.all(subUrls.map(u => fetchPage(u)));
+    pageXml = subXmls.filter(Boolean).join('\n');
+  }
+
+  const pages = new Set();
+  const imgMap = new Map();
+
+  // Skip patterns reused below — same as elsewhere in the file
+  const SKIP_PATH = /\/(privacy|terms|disclaimer|cookie|accessibility|broker-portal|login|register|cart|account|legal|thank-you|inquire|schedule|sitemap|view-digital-brochure|wp-|winter|holiday|404)/i;
+
+  // Each <url> block lists one page and zero or more <image:loc> tags
+  for (const block of pageXml.matchAll(/<url>([\s\S]*?)<\/url>/gi)) {
+    const blockText = block[1];
+    const locMatch = blockText.match(/<loc>\s*([^<]+?)\s*<\/loc>/i);
+    if (!locMatch) continue;
+    try {
+      const parsed = new URL(locMatch[1].trim());
+      if (parsed.hostname !== host) continue;
+      if (SKIP_PATH.test(parsed.pathname)) continue;
+      pages.add(parsed.protocol + '//' + parsed.host + parsed.pathname);
+    } catch { continue; }
+
+    // Pre-discovered images (Yoast tracks JS-rendered ones server-side)
+    for (const im of blockText.matchAll(/<image:loc>\s*([^<]+?)\s*<\/image:loc>/gi)) {
+      const imgUrl = im[1].trim();
+      if (imgMap.has(imgUrl)) continue;
+      const lower = imgUrl.toLowerCase();
+      // Drop obvious junk: logos, icons, sketches, map markers, grayscale headshots
+      if (/logo|icon|map-icon|outline|seal|badge|footer|grayscale|sketch|favicon|social/i.test(lower)) continue;
+      if (PEOPLE_BLOCK.test(lower)) continue;
+      // Categorize using the same heuristics as extractImages
+      let cat = 'Exterior';
+      if      (/floor.?plan|floorplan|layout|unit.?plan|site.?plan/.test(lower)) cat = 'Floor Plans';
+      else if (/pool|amenity|gym|fitness|spa|yoga|lounge|rooftop|wellness|sauna|wine.?room|cabana|owners/.test(lower)) cat = 'Amenities';
+      else if (/living|bedroom|bath|interior|residence|terrace|balcon|kitchen|master|ensuite|great.?room/.test(lower)) cat = 'Residences';
+      else if (/view|aerial|intracoastal|ocean|skyline|water|sunset|sunrise|drone|cam_|tower/.test(lower)) cat = 'Views';
+      else if (/lobby|arrival|entrance|motor.?court|porte|foyer/.test(lower)) cat = 'Arrival';
+      imgMap.set(imgUrl, { url: imgUrl, caption: '', category: cat });
+    }
+  }
+
+  return { pages: Array.from(pages), images: Array.from(imgMap.values()) };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const { url } = req.body || {};
@@ -84,42 +151,56 @@ export default async function handler(req, res) {
     const base = new URL(url.startsWith('http') ? url : 'https://' + url);
     const host = base.hostname;
 
-    // Hardcoded seed paths — known common slugs across modern luxury condo sites
-    const seedPaths = [
-      '/', '/residences', '/amenities', '/team', '/contact', '/location',
-      '/gallery', '/photo-gallery', '/floor-plans', '/floorplans', '/availability', '/media',
-    ];
-    const seedUrls = new Set(seedPaths.map(p => base.protocol + '//' + host + p));
+    // STEP 1: Try the site's sitemap first — gives us canonical page URLs
+    // AND inline image references (including JS-rendered ones). Big quality win
+    // for WordPress sites that use Yoast SEO (Alba, Berkeley, most luxury condo
+    // marketing sites).
+    const sitemap = await discoverFromSitemap(host, base);
+    console.log('[Research] Sitemap discovered', sitemap.pages.length, 'pages and', sitemap.images.length, 'images');
 
-    // Also discover internal links from the home page nav, but ONLY follow those
-    // whose path looks gallery/floor-plan/residence-related. This keeps the scrape
-    // bounded so we don't blow the AI prompt token budget.
-    const RELEVANT_PATH = /(gallery|photo|residence|floor.?plan|floorplan|the.?home|interior|amenit|tower|building|suite)/i;
-    const SKIP_PATH     = /(privacy|terms|disclaimer|cookie|accessibility|sitemap|broker-portal|login|register|appointment|subscribe|cart|account|legal|press|news|blog|post|category|tag|author|wp-)/i;
+    // STEP 2: Build the URL list to fetch.
+    //  - If sitemap gave us pages, prefer those (authoritative for that site)
+    //  - Otherwise fall back to hardcoded seed paths + home-page link discovery
+    let allUrls;
+    if (sitemap.pages.length >= 4) {
+      // Always include the home page even if not explicitly in sitemap
+      const set = new Set([base.protocol + '//' + host + '/']);
+      for (const u of sitemap.pages) set.add(u);
+      allUrls = Array.from(set).slice(0, 14);
+    } else {
+      // Hardcoded seed paths (legacy fallback for sites without sitemaps)
+      const seedPaths = [
+        '/', '/residences', '/amenities', '/team', '/contact', '/location',
+        '/gallery', '/photo-gallery', '/floor-plans', '/floorplans', '/availability', '/media',
+      ];
+      const seedUrls = new Set(seedPaths.map(p => base.protocol + '//' + host + p));
 
-    const homeUrl  = base.protocol + '//' + host + '/';
-    const homeHtml = await fetchPage(homeUrl);
-    if (homeHtml) {
-      for (const m of homeHtml.matchAll(/href=["']([^"'#?]+)["']/gi)) {
-        let u = m[1];
-        if (!u || u.startsWith('mailto:') || u.startsWith('tel:') || /\.(pdf|jpg|jpeg|png|webp|gif|svg|css|js|zip|mp4)(\?|$)/i.test(u)) continue;
-        if (u.startsWith('/'))      u = base.protocol + '//' + host + u;
-        else if (!u.startsWith('http')) continue;
-        try {
-          const parsed = new URL(u);
-          if (parsed.hostname !== host) continue;
-          const path = parsed.pathname.toLowerCase();
-          if (SKIP_PATH.test(path))      continue;
-          if (!RELEVANT_PATH.test(path)) continue; // require a content keyword
-          const clean = parsed.protocol + '//' + parsed.host + parsed.pathname;
-          seedUrls.add(clean.endsWith('/') ? clean : clean + '/');
-        } catch {}
+      // Discover internal links from the home page nav, but ONLY those that look
+      // gallery/floor-plan/residence-related to keep the prompt budget bounded.
+      const RELEVANT_PATH = /(gallery|photo|residence|floor.?plan|floorplan|the.?home|interior|amenit|tower|building|suite)/i;
+      const SKIP_PATH     = /(privacy|terms|disclaimer|cookie|accessibility|sitemap|broker-portal|login|register|appointment|subscribe|cart|account|legal|press|news|blog|post|category|tag|author|wp-)/i;
+
+      const homeUrl  = base.protocol + '//' + host + '/';
+      const homeHtml = await fetchPage(homeUrl);
+      if (homeHtml) {
+        for (const m of homeHtml.matchAll(/href=["']([^"'#?]+)["']/gi)) {
+          let u = m[1];
+          if (!u || u.startsWith('mailto:') || u.startsWith('tel:') || /\.(pdf|jpg|jpeg|png|webp|gif|svg|css|js|zip|mp4)(\?|$)/i.test(u)) continue;
+          if (u.startsWith('/'))      u = base.protocol + '//' + host + u;
+          else if (!u.startsWith('http')) continue;
+          try {
+            const parsed = new URL(u);
+            if (parsed.hostname !== host) continue;
+            const path = parsed.pathname.toLowerCase();
+            if (SKIP_PATH.test(path))      continue;
+            if (!RELEVANT_PATH.test(path)) continue;
+            const clean = parsed.protocol + '//' + parsed.host + parsed.pathname;
+            seedUrls.add(clean.endsWith('/') ? clean : clean + '/');
+          } catch {}
+        }
       }
+      allUrls = Array.from(seedUrls).slice(0, 14);
     }
-
-    // Hard cap at 14 URLs — same order of magnitude as original, but with the
-    // gallery/floor-plan paths now reachable for non-standard sites.
-    const allUrls = Array.from(seedUrls).slice(0, 14);
 
     console.log('[Research] Fetching', allUrls.length, 'pages from', host);
     const pages = await Promise.all(allUrls.map(async (pageUrl) => {
@@ -128,7 +209,16 @@ export default async function handler(req, res) {
     }));
 
     const validPages = pages.filter(Boolean);
-    const allImages  = [...new Map(validPages.flatMap(p => p.images).map(i => [i.url, i])).values()];
+    // Combine images from all sources: scraped HTML + Yoast sitemap inline tags.
+    // Sitemap images are critical because they include JS-rendered content the
+    // static fetch can't otherwise see.
+    const scrapedImgs = validPages.flatMap(p => p.images);
+    const allImagesMap = new Map();
+    for (const img of [...scrapedImgs, ...sitemap.images]) {
+      if (!allImagesMap.has(img.url)) allImagesMap.set(img.url, img);
+    }
+    const allImages = Array.from(allImagesMap.values());
+    console.log('[Research] images: scraped=' + scrapedImgs.length + ' sitemap=' + sitemap.images.length + ' merged=' + allImages.length);
     console.log('[Research]', validPages.length, 'pages,', allImages.length, 'images');
 
     const siteContent = validPages.map(p => '\n=== ' + p.url + ' ===\n' + p.text).join('\n\n').substring(0, 12000);
