@@ -3,9 +3,28 @@
 // Uses fetch() for all HTTP -- no require() needed
 export const maxDuration = 300;
 
-const PEOPLE_BLOCK = /headshot|portrait|\.?team|staff|executive|director|bio|author|speaker|ceo|president|founder|partner|employee|agent-photo|broker-photo|lifestyle|couple|family-portrait|crowd|guests|audience|model-shot|festive/i;
-const LOGO_BLOCK   = /logo|icon|favicon|badge|seal|watermark|sprite|btn-|button-|arrow|chevron/i;
-const SKIP_EXT     = /\/(social|facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest|whatsapp|google)\./i;
+// One unified block list — covers logos, icons, decoration, team headshots,
+// lifestyle shots, social-share thumbs, and assorted page-decoration images.
+// Anything matching here is dropped before categorization runs.
+const BLOCK_PATTERNS = /(?:^|[^a-z])(?:logo|icon|favicon|badge|seal|watermark|sprite|chevron|outline|foil|footer|header[-_]bg|sketch|grayscale|map[-_]icon|map[-_]marker|developer|developers|headshot|portrait|team[-_]|staff|executive|director|bio|author|speaker|ceo|president|founder|employee|agent[-_]photo|broker[-_]photo|lifestyle|couple|family[-_]portrait|crowd|guests|audience|model[-_]shot|festive|inquire[-_]|thank[-_]you|winter[-_]wonderland|cookie|banner[-_]ad|social[-_]share|instagram|facebook|twitter|linkedin|whatsapp|youtube|btn[-_]|button[-_]|arrow|placeholder|loading|spinner|hamburger|close[-_]x|menu[-_]bar)/i;
+const SKIP_EXT     = /\.(svg|gif|webp\?|css|js)(\?|$)/i;
+
+// Strict allow-list categorizer. Returns null (= DROP) if filename doesn't
+// match any recognized building/real-estate category. This is more aggressive
+// than defaulting to 'Exterior' — uncategorizable junk like 'DSC00359.jpg',
+// 'Image-1.png', 'Full-White.png', 'Group-1640.png' would otherwise leak in
+// as top-priority Exterior shots.
+function categorizeImage(check) {
+  if (/floor.?plan|floorplan|layout|unit.?plan|site.?plan|residence.?plan/.test(check)) return 'Floor Plans';
+  if (/lobby|arrival|entrance|motor.?court|porte|foyer|valet/.test(check))               return 'Arrival';
+  if (/pool|gym|fitness|spa|yoga|lounge|rooftop|wellness|sauna|wine[-_]?room|cabana|owners[-_]?lounge|theater|game[-_]room|kids[-_]room|amenit/.test(check)) return 'Amenities';
+  if (/living|bedroom|bath|interior|residence|terrace|balcon|kitchen|master|ensuite|great[-_]?room|\bden\b/.test(check)) return 'Residences';
+  if (/exterior|tower|building|aerial|drone|skyline|architectur|hero[-_\s]|cam[-_]?\d/.test(check)) return 'Exterior';
+  if (/view|intracoastal|ocean[-_]?view|water[-_]?view|sunset|sunrise|cityscape|marina/.test(check)) return 'Views';
+  return null;
+}
+// Block social-media tracking pixels and the like
+const SKIP_DOMAIN = /\/(social|facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest|whatsapp|google|adnxs|doubleclick)\./i;
 
 async function fetchPage(url) {
   try {
@@ -82,22 +101,20 @@ function extractImages(html, baseUrl) {
       url = url.replace(/-\d+x\d+(\.(?:jpg|jpeg|png|webp))$/i, '$1');
       if (map.has(url)) continue;
       const check = (url + ' ' + alt).toLowerCase();
-      if (PEOPLE_BLOCK.test(check) || LOGO_BLOCK.test(check) || SKIP_EXT.test(url)) continue;
+      if (BLOCK_PATTERNS.test(check) || SKIP_DOMAIN.test(url)) continue;
       if (/\d+x\d+/.test(url) && url.includes('thumbnail')) continue;
-      let cat = 'Exterior';
-      if (/floor.?plan|floorplan|layout|unit.?plan|site.?plan/.test(check)) cat = 'Floor Plans';
-      else if (/pool|amenity|gym|fitness|spa|yoga|lounge|rooftop|bowling|pickleball|wellness/.test(check)) cat = 'Amenities';
-      else if (/living|bedroom|bath|interior|residence|terrace|balcon|kitchen/.test(check)) cat = 'Residences';
-      else if (/view|aerial|intracoastal|ocean|skyline|water|lake|bird|drone/.test(check)) cat = 'Views';
-      else if (/lobby|arrival|entrance|motor.?court|porte|foyer/.test(check)) cat = 'Arrival';
+      const cat = categorizeImage(check);
+      if (!cat) continue; // strict allow-list — uncategorizable images get dropped
       map.set(url, { url, caption: alt.substring(0, 120), category: cat });
     }
     for (const m of html.matchAll(/url\(["']?(https?:\/\/[^"')]+\.(?:jpg|jpeg|png|webp))["']?\)/gi)) {
       let url = m[1].replace(/-\d+x\d+(\.(?:jpg|jpeg|png|webp))$/i, '$1');
       if (map.has(url)) continue;
       const check = url.toLowerCase();
-      if (PEOPLE_BLOCK.test(check) || LOGO_BLOCK.test(check)) continue;
-      map.set(url, { url, caption: '', category: 'Exterior' });
+      if (BLOCK_PATTERNS.test(check) || SKIP_DOMAIN.test(url)) continue;
+      const cat = categorizeImage(check);
+      if (!cat) continue; // CSS background junk usually has no useful filename — drop
+      map.set(url, { url, caption: '', category: cat });
     }
   } catch {}
   return Array.from(map.values()).filter(i => !i.url.includes('base64') && !i.url.includes('placeholder'));
@@ -153,16 +170,9 @@ async function discoverFromSitemap(host, base) {
       const imgUrl = im[1].trim();
       if (imgMap.has(imgUrl)) continue;
       const lower = imgUrl.toLowerCase();
-      // Drop obvious junk: logos, icons, sketches, map markers, grayscale headshots
-      if (/logo|icon|map-icon|outline|seal|badge|footer|grayscale|sketch|favicon|social/i.test(lower)) continue;
-      if (PEOPLE_BLOCK.test(lower)) continue;
-      // Categorize using the same heuristics as extractImages
-      let cat = 'Exterior';
-      if      (/floor.?plan|floorplan|layout|unit.?plan|site.?plan/.test(lower)) cat = 'Floor Plans';
-      else if (/pool|amenity|gym|fitness|spa|yoga|lounge|rooftop|wellness|sauna|wine.?room|cabana|owners/.test(lower)) cat = 'Amenities';
-      else if (/living|bedroom|bath|interior|residence|terrace|balcon|kitchen|master|ensuite|great.?room/.test(lower)) cat = 'Residences';
-      else if (/view|aerial|intracoastal|ocean|skyline|water|sunset|sunrise|drone|cam_|tower/.test(lower)) cat = 'Views';
-      else if (/lobby|arrival|entrance|motor.?court|porte|foyer/.test(lower)) cat = 'Arrival';
+      if (BLOCK_PATTERNS.test(lower) || SKIP_DOMAIN.test(imgUrl)) continue;
+      const cat = categorizeImage(lower);
+      if (!cat) continue; // strict allow-list — drop if not categorizable
       imgMap.set(imgUrl, { url: imgUrl, caption: '', category: cat });
     }
   }
