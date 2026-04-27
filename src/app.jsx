@@ -246,6 +246,176 @@ function PricingTab({ buildingId, accent }) {
   );
 }
 
+function FilesAndMedia({ data, set, isMobile, accent }) {
+  const buildingId = data.id || data.suggestedId;
+
+  // Three sections; each maps to a field on the building record.
+  const sections = [
+    { key: "floorPlanImages", kind: "floorplan",  label: "Floor Plans",        accept: "image/*,application/pdf", note: "PDFs or images. Each file becomes a card on the Floor Plans tab." },
+    { key: "renderings",      kind: "rendering",  label: "Gallery Images",     accept: "image/*",                 note: "Images shown on the Gallery tab." },
+    { key: "brokerDocs",      kind: "brokerdoc",  label: "Broker Toolkit",     accept: "application/pdf",         note: "PDFs shown on the Broker Toolkit tab." },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
+      {sections.map(s => (
+        <FileSection
+          key={s.key}
+          buildingId={buildingId}
+          fieldKey={s.key}
+          kind={s.kind}
+          label={s.label}
+          accept={s.accept}
+          note={s.note}
+          items={data[s.key] || []}
+          onChange={next => set(s.key, next)}
+          isMobile={isMobile}
+          accent={accent}
+        />
+      ))}
+    </div>
+  );
+}
+
+function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, onChange, isMobile, accent }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
+
+  const isPDF = url => /\.pdf(\?|$)/i.test(url || "");
+
+  // Upload one or more files. Patches the matching field on the building.
+  async function handleUpload(files) {
+    if (!buildingId) { alert("Save the building first, then upload files."); return; }
+    if (!files || !files.length) return;
+    setBusy(true);
+
+    const uploaded = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setProgress("Uploading " + (i + 1) + " of " + files.length + ": " + file.name);
+      try {
+        const r = await fetch("/api/upload-asset", {
+          method: "POST",
+          headers: {
+            "Content-Type":   file.type || "application/octet-stream",
+            "x-building-id":  buildingId,
+            "x-asset-kind":   kind,
+            "x-filename":     file.name,
+          },
+          body: file,
+        });
+        const j = await r.json();
+        if (!r.ok) { alert("Upload failed for " + file.name + ": " + (j.error || r.status)); continue; }
+
+        // Build the right shape for this field
+        let entry;
+        if (fieldKey === "floorPlanImages") {
+          // floorPlanImages: { name, thumb, pdf } — for PDFs the thumb is the URL itself (the app falls back gracefully)
+          entry = isPDF(j.url)
+            ? { name: file.name.replace(/\.[^.]+$/, ""), thumb: j.url, pdf: j.url }
+            : { name: file.name.replace(/\.[^.]+$/, ""), thumb: j.url, pdf: j.url };
+        } else if (fieldKey === "renderings") {
+          // renderings: { url, caption, category }
+          entry = { url: j.url, caption: file.name.replace(/\.[^.]+$/, ""), category: "Uploaded" };
+        } else if (fieldKey === "brokerDocs") {
+          // brokerDocs: { name, type, url|pdf }
+          entry = { name: file.name.replace(/\.[^.]+$/, ""), type: "document", url: j.url };
+        }
+        uploaded.push(entry);
+      } catch (e) {
+        alert("Upload error for " + file.name + ": " + e.message);
+      }
+    }
+
+    if (uploaded.length) onChange([...items, ...uploaded]);
+    setBusy(false);
+    setProgress("");
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function handleDelete(idx) {
+    const next = items.slice();
+    next.splice(idx, 1);
+    onChange(next);
+  }
+
+  function handleRename(idx, newName) {
+    const next = items.slice();
+    const item = { ...next[idx] };
+    if (fieldKey === "renderings")           item.caption = newName;
+    else                                     item.name    = newName;
+    next[idx] = item;
+    onChange(next);
+  }
+
+  // Display-friendly fields for each item shape
+  function getDisplay(it) {
+    if (fieldKey === "renderings")        return { label: it.caption || "image", url: it.url, isImage: true };
+    if (fieldKey === "brokerDocs")        return { label: it.name || "document", url: it.url || it.pdf, isImage: false };
+    /* floorPlanImages */                 return { label: it.name || "plan",     url: it.pdf || it.thumb, isImage: !isPDF(it.thumb) && !isPDF(it.pdf) };
+  }
+
+  return (
+    <div style={{ background: T.bgAlt, border: "1px solid " + T.border, borderRadius: 10, padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: T.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {label} <span style={{ color: T.textMuted, fontWeight: 600 }}>({items.length})</span>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input ref={fileRef} type="file" multiple accept={accept} style={{ display: "none" }} onChange={e => handleUpload(e.target.files)} />
+          <button
+            type="button"
+            onClick={() => fileRef.current && fileRef.current.click()}
+            disabled={busy}
+            style={{ padding: "7px 12px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: busy ? "wait" : "pointer", minHeight: 34 }}
+          >
+            {busy ? "Uploading..." : "+ Upload"}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>{note}</div>
+      {progress && <div style={{ fontSize: 11, color: accent, marginBottom: 8 }}>{progress}</div>}
+
+      {items.length === 0 ? (
+        <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic", padding: "10px 0" }}>None uploaded yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {items.map((it, i) => {
+            const d = getDisplay(it);
+            return (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.bg, border: "1px solid " + T.border, borderRadius: 6 }}>
+                <div style={{ width: 36, height: 36, borderRadius: 4, background: T.bgAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", fontSize: 11, fontWeight: 700, color: T.textMuted }}>
+                  {d.isImage && d.url
+                    ? <img src={d.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
+                    : "PDF"}
+                </div>
+                <input
+                  type="text"
+                  value={d.label}
+                  onChange={e => handleRename(i, e.target.value)}
+                  style={{ flex: 1, padding: "6px 8px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 12, color: T.text, background: T.bg, fontFamily: "inherit", minWidth: 0 }}
+                />
+                {d.url && (
+                  <a href={d.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: accent, fontWeight: 600, textDecoration: "none", padding: "4px 8px", flexShrink: 0 }}>View</a>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleDelete(i)}
+                  style={{ background: "none", border: "none", color: "#c62828", fontSize: 16, cursor: "pointer", padding: "4px 8px", fontWeight: 700, flexShrink: 0 }}
+                  title="Remove"
+                >
+                  X
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function EditModal({ building, onSave, onClose }) {
   const [data, setData] = useState({ ...building, suggestedName: building.suggestedName || building.name || "" });
   const [saving, setSaving] = useState(false);
@@ -362,6 +532,9 @@ function EditModal({ building, onSave, onClose }) {
           <Grid>
             <FI label="Location Note" k="locationNote" />
           </Grid>
+
+          <SH label="Files and Media" />
+          <FilesAndMedia data={data} set={set} isMobile={isMobile} accent={data.accentColor || "#2a2a2a"} />
         </div>
         <div style={{ padding: "14px 20px", borderTop: "1px solid " + T.border, display: "flex", gap: 10, flexShrink: 0 }}>
           <button onClick={onClose} style={{ flex: 1, padding: "12px", background: T.bgAlt, border: "1px solid " + T.border, borderRadius: 8, fontSize: 14, cursor: "pointer", color: T.text, fontWeight: 600, minHeight: 44 }}>Cancel</button>
