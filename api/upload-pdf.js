@@ -73,7 +73,7 @@ async function callClaude(pdfBase64, promptText) {
 // Once a floor plan has been extracted, write it into the building and try to
 // link any matching pricing units. Idempotent — replaces an entry with the
 // same name, otherwise appends.
-async function persistFloorPlan(buildingId, plan, blobUrl, sourceName) {
+async function persistFloorPlan(buildingId, plan, blobUrl, sourceName, thumbUrl) {
   const key      = 'building:' + buildingId;
   const building = await kv.get(key);
   if (!building) throw new Error('Building not found: ' + buildingId);
@@ -88,7 +88,7 @@ async function persistFloorPlan(buildingId, plan, blobUrl, sourceName) {
     totalSF:    plan.totalSF    ?? null,
     exposure:   plan.exposure   ?? null,
     floors:     plan.floors     ?? null,
-    thumb:      blobUrl, // PDF acts as both the thumb fallback and the source
+    thumb:      thumbUrl || blobUrl, // PNG render of page 1 if available, otherwise PDF URL
     pdf:        blobUrl,
     units:      [],
     sourceName: sourceName || null,
@@ -148,7 +148,7 @@ export default async function handler(req, res) {
         for await (const c of req) chunks.push(c);
         body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       }
-      const { kind, blobUrl, buildingId, docName, context, sourceName } = body || {};
+      const { kind, blobUrl, thumbUrl, buildingId, docName, context, sourceName } = body || {};
       if (!blobUrl)    return res.status(400).json({ error: 'blobUrl required in JSON mode' });
       if (!buildingId) return res.status(400).json({ error: 'buildingId required' });
 
@@ -163,10 +163,10 @@ export default async function handler(req, res) {
         const extracted = await callClaude(pdfBase64, FLOORPLAN_PROMPT);
         if (!extracted || !extracted.name) {
           // Still store under the source filename if Claude failed to read it
-          const fallback = await persistFloorPlan(buildingId, { name: (sourceName || 'Untitled').replace(/\.pdf$/i, '').replace(/[-_]/g, ' ') }, blobUrl, sourceName);
+          const fallback = await persistFloorPlan(buildingId, { name: (sourceName || 'Untitled').replace(/\.pdf$/i, '').replace(/[-_]/g, ' ') }, blobUrl, sourceName, thumbUrl);
           return res.status(200).json({ kind: 'floorplan', extracted: null, persisted: fallback, warning: 'Claude could not extract metadata; stored with filename only.' });
         }
-        const persisted = await persistFloorPlan(buildingId, extracted, blobUrl, sourceName);
+        const persisted = await persistFloorPlan(buildingId, extracted, blobUrl, sourceName, thumbUrl);
         return res.status(200).json({ kind: 'floorplan', extracted, persisted });
       }
 
