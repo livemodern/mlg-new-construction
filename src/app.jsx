@@ -249,15 +249,16 @@ function PricingTab({ buildingId, accent }) {
 function FilesAndMedia({ data, set, isMobile, accent }) {
   const buildingId = data.id || data.suggestedId;
 
-  // Three sections; each maps to a field on the building record.
   const sections = [
-    { key: "floorPlanImages", kind: "floorplan",  label: "Floor Plans",        accept: "image/*,application/pdf", note: "PDFs or images. Each file becomes a card on the Floor Plans tab." },
-    { key: "renderings",      kind: "rendering",  label: "Gallery Images",     accept: "image/*",                 note: "Images shown on the Gallery tab." },
-    { key: "brokerDocs",      kind: "brokerdoc",  label: "Broker Toolkit",     accept: "application/pdf",         note: "PDFs shown on the Broker Toolkit tab." },
+    { key: "floorPlanImages", kind: "floorplan",  label: "Floor Plans",     accept: "image/*,application/pdf", note: "PDFs or images. Each becomes a card on the Floor Plans tab." },
+    { key: "renderings",      kind: "rendering",  label: "Gallery Images",  accept: "image/*",                 note: "Images shown on the Gallery tab." },
+    { key: "brokerDocs",      kind: "brokerdoc",  label: "Broker Toolkit",  accept: "application/pdf",         note: "PDFs shown on the Broker Toolkit tab." },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: 4 }}>
+      <FolderImporter buildingId={buildingId} data={data} set={set} accent={accent} />
+      <PricingSection buildingId={buildingId} accent={accent} />
       {sections.map(s => (
         <FileSection
           key={s.key}
@@ -273,6 +274,197 @@ function FilesAndMedia({ data, set, isMobile, accent }) {
           accent={accent}
         />
       ))}
+    </div>
+  );
+}
+
+function FolderImporter({ buildingId, data, set, accent }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [result, setResult] = useState(null);
+
+  async function handleImport() {
+    if (!buildingId) { alert("Save the building first, then import."); return; }
+    if (!url.trim())  { alert("Paste a Dropbox or Google Drive folder URL."); return; }
+    setBusy(true);
+    setStatus("Enumerating folder and classifying files… this can take a minute.");
+    setResult(null);
+    try {
+      const r = await fetch("/api/import-from-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderUrl: url.trim(), buildingId }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setStatus("Import failed: " + (j.error || r.status));
+        setBusy(false);
+        return;
+      }
+
+      // Merge categorized files into the building record (additive, no overwrites)
+      const next = { ...data };
+      if (j.data?.floorPlanImages?.length)  next.floorPlanImages = [...(data.floorPlanImages || []), ...j.data.floorPlanImages];
+      if (j.data?.renderings?.length)       next.renderings      = [...(data.renderings      || []), ...j.data.renderings];
+      if (j.data?.brokerDocs?.length)       next.brokerDocs      = [...(data.brokerDocs      || []), ...j.data.brokerDocs];
+
+      // Push the categorized fields back via set() so the UI reflects them and Save persists them
+      if (next.floorPlanImages !== data.floorPlanImages) set("floorPlanImages", next.floorPlanImages);
+      if (next.renderings      !== data.renderings)      set("renderings",      next.renderings);
+      if (next.brokerDocs      !== data.brokerDocs)      set("brokerDocs",      next.brokerDocs);
+
+      // If pricing units came back, POST them to the pricing API (doesn't go through Save)
+      if (j.data?.pricingUnits?.length) {
+        try {
+          const existing = await fetch("/api/pricing?buildingId=" + buildingId).then(x => x.ok ? x.json() : []);
+          const existingUnits = Array.isArray(existing) ? existing : (existing.units || []);
+          const merged = [...existingUnits, ...j.data.pricingUnits.map((u, i) => ({ ...u, id: u.id || ("import-" + Date.now() + "-" + i) }))];
+          await fetch("/api/pricing", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ buildingId, units: merged }),
+          });
+        } catch (e) { console.warn("Pricing merge failed:", e.message); }
+      }
+
+      setResult(j);
+      setStatus(j.truncated
+        ? "Imported " + j.processed + " of " + j.totalFound + " files (capped). Run again to pick up the rest."
+        : "Imported " + j.processed + " files."
+      );
+      setUrl("");
+    } catch (e) {
+      setStatus("Import error: " + e.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ background: "#f0f7fa", border: "1px solid #b8d8e3", borderRadius: 10, padding: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 800, color: T.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+        Auto-Import from Drive or Dropbox
+      </div>
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 10 }}>
+        Paste a shared folder URL. Files are auto-categorized as floor plans, renderings, broker docs, or price sheets, then uploaded. Up to 12 files per run.
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input
+          type="url"
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="https://drive.google.com/drive/folders/... or https://dropbox.com/scl/fo/..."
+          disabled={busy}
+          style={{ flex: 1, minWidth: 200, padding: "9px 12px", borderRadius: 6, border: "1px solid " + T.border, fontSize: 13, color: T.text, background: T.bg, fontFamily: "inherit" }}
+        />
+        <button
+          type="button"
+          onClick={handleImport}
+          disabled={busy || !url.trim()}
+          style={{ padding: "9px 16px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: busy ? "wait" : "pointer", minHeight: 40, opacity: busy || !url.trim() ? 0.6 : 1 }}
+        >
+          {busy ? "Importing…" : "Import"}
+        </button>
+      </div>
+      {status && <div style={{ fontSize: 12, color: busy ? accent : (status.startsWith("Import failed") || status.startsWith("Import error") ? "#c62828" : "#2e7d32"), marginTop: 10 }}>{status}</div>}
+      {result?.categorized && (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 10, fontSize: 12, color: T.textSub }}>
+          <span><strong>{result.categorized.floorPlanImages}</strong> floor plans</span>
+          <span><strong>{result.categorized.renderings}</strong> renderings</span>
+          <span><strong>{result.categorized.brokerDocs}</strong> broker docs</span>
+          <span><strong>{result.categorized.pricingUnits}</strong> pricing units</span>
+          {result.errors?.length ? <span style={{ color: "#c62828" }}><strong>{result.errors.length}</strong> errors</span> : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PricingSection({ buildingId, accent }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [unitCount, setUnitCount] = useState(null);
+
+  // Load current pricing count when this component mounts
+  useEffect(() => {
+    if (!buildingId) return;
+    fetch("/api/pricing?buildingId=" + buildingId)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => {
+        const arr = Array.isArray(d) ? d : (d.units || []);
+        setUnitCount(arr.length);
+      })
+      .catch(() => setUnitCount(null));
+  }, [buildingId]);
+
+  async function handleUpload(file) {
+    if (!buildingId) { alert("Save the building first."); return; }
+    if (!file) return;
+    setBusy(true);
+    setStatus("Uploading and extracting pricing from " + file.name + "…");
+    try {
+      // Reuse existing /api/upload-pdf which extracts pricing via Claude
+      const r = await fetch("/api/upload-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type":   "application/pdf",
+          "x-building-id":  buildingId,
+          "x-doc-name":     file.name.replace(/\.pdf$/i, ""),
+          "x-context":      "pricing sheet",
+        },
+        body: file,
+      });
+      const j = await r.json();
+      if (!r.ok) { setStatus("Upload failed: " + (j.error || r.status)); setBusy(false); return; }
+
+      const newUnits = (j.extracted?.pricing || []).map((u, i) => ({ ...u, id: u.id || ("upload-" + Date.now() + "-" + i) }));
+      if (!newUnits.length) {
+        setStatus("PDF saved but no pricing was detected. You can edit pricing manually on the Pricing tab.");
+        setBusy(false);
+        return;
+      }
+
+      // Merge with existing pricing
+      const existing = await fetch("/api/pricing?buildingId=" + buildingId).then(x => x.ok ? x.json() : []);
+      const existingUnits = Array.isArray(existing) ? existing : (existing.units || []);
+      const merged = [...existingUnits, ...newUnits];
+      const post = await fetch("/api/pricing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ buildingId, units: merged }),
+      });
+      if (!post.ok) { setStatus("Pricing extracted but save failed."); setBusy(false); return; }
+
+      setUnitCount(merged.length);
+      setStatus("Added " + newUnits.length + " unit" + (newUnits.length === 1 ? "" : "s") + " to pricing.");
+    } catch (e) {
+      setStatus("Upload error: " + e.message);
+    }
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  return (
+    <div style={{ background: T.bgAlt, border: "1px solid " + T.border, borderRadius: 10, padding: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12, fontWeight: 800, color: T.text, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          Pricing Sheet {unitCount !== null && <span style={{ color: T.textMuted, fontWeight: 600 }}>({unitCount} units)</span>}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input ref={fileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={e => handleUpload(e.target.files[0])} />
+          <button
+            type="button"
+            onClick={() => fileRef.current && fileRef.current.click()}
+            disabled={busy}
+            style={{ padding: "7px 12px", background: accent, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: busy ? "wait" : "pointer", minHeight: 34 }}
+          >
+            {busy ? "Processing…" : "+ Upload Price Sheet"}
+          </button>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: T.textMuted }}>PDF only. Pricing rows are extracted by AI and added to the Pricing tab.</div>
+      {status && <div style={{ fontSize: 11, color: busy ? accent : (status.includes("failed") || status.includes("error") ? "#c62828" : "#2e7d32"), marginTop: 8 }}>{status}</div>}
     </div>
   );
 }
