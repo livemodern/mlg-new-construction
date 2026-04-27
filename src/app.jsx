@@ -883,9 +883,21 @@ function ProjectView({ project, onEdit }) {
               })}
             </div>
           ) : (
-            <div style={{ display: "flex", gap: 0, marginTop: 12, borderTop: "1px solid " + T.border, overflowX: "auto" }}>
-              {stats.map(([k, v]) => (
-                <div key={k} style={{ padding: "10px 16px", borderRight: "1px solid " + T.border, flexShrink: 0 }}>
+            <div style={{
+              display: "flex",
+              gap: 0,
+              marginTop: 12,
+              border: "1px solid " + T.border,
+              borderRadius: 8,
+              overflow: "hidden",
+              background: T.bg,
+            }}>
+              {stats.map(([k, v], i) => (
+                <div key={k} style={{
+                  padding: "10px 16px",
+                  borderRight: i < stats.length - 1 ? "1px solid " + T.border : "none",
+                  flexShrink: 0,
+                }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", whiteSpace: "nowrap" }}>{k}</div>
                   <div style={{ fontSize: 13, fontWeight: 500, color: T.text, whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>{String(v)}</div>
                 </div>
