@@ -229,8 +229,16 @@ export default async function handler(req, res) {
 
       if (!apiRes.ok) {
         const errText = await apiRes.text();
-        console.error('[Research] API error', apiRes.status, errText.substring(0, 200));
-        return res.status(500).json({ error: 'API error ' + apiRes.status });
+        console.error('[Research] API error', apiRes.status, errText.substring(0, 400));
+        let detail = '';
+        try {
+          const errJson = JSON.parse(errText);
+          detail = errJson?.error?.message || errJson?.message || errText.substring(0, 300);
+        } catch { detail = errText.substring(0, 300); }
+        return res.status(500).json({
+          error: 'Anthropic API ' + apiRes.status + ': ' + detail,
+          iteration: itr,
+        });
       }
 
       const r = await apiRes.json();
