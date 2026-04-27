@@ -124,15 +124,15 @@ export default async function handler(req, res) {
     console.log('[Research] Fetching', allUrls.length, 'pages from', host);
     const pages = await Promise.all(allUrls.map(async (pageUrl) => {
       const html = await fetchPage(pageUrl);
-      return html ? { url: pageUrl, text: toText(html).substring(0, 5000), images: extractImages(html, pageUrl) } : null;
+      return html ? { url: pageUrl, text: toText(html).substring(0, 2500), images: extractImages(html, pageUrl) } : null;
     }));
 
     const validPages = pages.filter(Boolean);
     const allImages  = [...new Map(validPages.flatMap(p => p.images).map(i => [i.url, i])).values()];
     console.log('[Research]', validPages.length, 'pages,', allImages.length, 'images');
 
-    const siteContent = validPages.map(p => '\n=== ' + p.url + ' ===\n' + p.text).join('\n\n').substring(0, 35000);
-    const imageList   = allImages.slice(0, 150).map(i => i.url + ' [' + i.category + '] ' + i.caption).join('\n');
+    const siteContent = validPages.map(p => '\n=== ' + p.url + ' ===\n' + p.text).join('\n\n').substring(0, 12000);
+    const imageList   = allImages.slice(0, 50).map(i => i.url + ' [' + i.category + '] ' + i.caption).join('\n');
 
     const prompt = [
       'You are a luxury real estate data specialist for Modern Living Group in West Palm Beach, FL.',
@@ -206,13 +206,13 @@ export default async function handler(req, res) {
     let finalText = null;
     let itr = 0;
 
-    while (!finalText && itr < 10) {
+    while (!finalText && itr < 3) {
       itr++;
       console.log('[Research] iteration', itr);
 
       const payload = JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
+        max_tokens: 4000,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages,
       });
