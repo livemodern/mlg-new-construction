@@ -84,17 +84,19 @@ export default async function handler(req, res) {
     const base = new URL(url.startsWith('http') ? url : 'https://' + url);
     const host = base.hostname;
 
-    // Always try these common paths
+    // Hardcoded seed paths — known common slugs across modern luxury condo sites
     const seedPaths = [
-      '/', '/residences', '/the-residences', '/amenities', '/team', '/contact',
-      '/neighborhood', '/architecture-design', '/press', '/media', '/location',
-      '/about', '/interiors', '/gallery', '/photo-gallery', '/photos',
-      '/penthouses', '/availability', '/floor-plans', '/floorplans', '/services',
+      '/', '/residences', '/amenities', '/team', '/contact', '/location',
+      '/gallery', '/photo-gallery', '/floor-plans', '/floorplans', '/availability', '/media',
     ];
     const seedUrls = new Set(seedPaths.map(p => base.protocol + '//' + host + p));
 
-    // Also discover internal links from the home page (covers sites like Berkeley
-    // that use non-standard slugs like /photo-gallery/ instead of /gallery/)
+    // Also discover internal links from the home page nav, but ONLY follow those
+    // whose path looks gallery/floor-plan/residence-related. This keeps the scrape
+    // bounded so we don't blow the AI prompt token budget.
+    const RELEVANT_PATH = /(gallery|photo|residence|floor.?plan|floorplan|the.?home|interior|amenit|tower|building|suite)/i;
+    const SKIP_PATH     = /(privacy|terms|disclaimer|cookie|accessibility|sitemap|broker-portal|login|register|appointment|subscribe|cart|account|legal|press|news|blog|post|category|tag|author|wp-)/i;
+
     const homeUrl  = base.protocol + '//' + host + '/';
     const homeHtml = await fetchPage(homeUrl);
     if (homeHtml) {
@@ -106,18 +108,18 @@ export default async function handler(req, res) {
         try {
           const parsed = new URL(u);
           if (parsed.hostname !== host) continue;
-          // Drop trailing slash for dedup, then add back
-          const clean = parsed.protocol + '//' + parsed.host + parsed.pathname.replace(/\/+$/, '') + (parsed.pathname.endsWith('/') || parsed.pathname === '' ? '' : '');
-          // Only follow links whose path looks like content (not legal/forms)
           const path = parsed.pathname.toLowerCase();
-          if (/(privacy|terms|disclaimer|cookie|accessibility|sitemap|broker-portal|login|register|appointment|subscribe|cart|account|legal)/i.test(path)) continue;
+          if (SKIP_PATH.test(path))      continue;
+          if (!RELEVANT_PATH.test(path)) continue; // require a content keyword
+          const clean = parsed.protocol + '//' + parsed.host + parsed.pathname;
           seedUrls.add(clean.endsWith('/') ? clean : clean + '/');
         } catch {}
       }
     }
 
-    // Cap to a reasonable number to keep total fetch time bounded
-    const allUrls = Array.from(seedUrls).slice(0, 25);
+    // Hard cap at 14 URLs — same order of magnitude as original, but with the
+    // gallery/floor-plan paths now reachable for non-standard sites.
+    const allUrls = Array.from(seedUrls).slice(0, 14);
 
     console.log('[Research] Fetching', allUrls.length, 'pages from', host);
     const pages = await Promise.all(allUrls.map(async (pageUrl) => {
