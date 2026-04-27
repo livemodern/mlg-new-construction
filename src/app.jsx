@@ -495,13 +495,17 @@ function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, o
     if (!files || !files.length) return;
     setBusy(true);
 
+    // Lazy-load the client SDK so it doesn't bloat the initial bundle
+    const { upload } = await import("@vercel/blob/client");
+
+    const folderMap = { floorplan: "floorplans", rendering: "renderings", brokerdoc: "pdfs" };
+    const subfolder = folderMap[kind] || "other";
+
     const uploaded = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       setProgress("Uploading " + (i + 1) + " of " + files.length + ": " + file.name);
-      // Sanitize header values — strip anything outside printable ASCII to avoid
-      // "string did not match the expected pattern" thrown by Headers validation.
-      const ascii = s => String(s == null ? "" : s).replace(/[^\x20-\x7E]/g, "_");
+
       const ext = (file.name.split(".").pop() || "").toLowerCase();
       const inferType =
         ext === "pdf"  ? "application/pdf"  :
@@ -512,33 +516,25 @@ function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, o
         ext === "gif"  ? "image/gif"        :
         "application/octet-stream";
 
-      try {
-        const r = await fetch("/api/upload-asset", {
-          method: "POST",
-          headers: {
-            "Content-Type":   inferType,
-            "x-building-id":  ascii(buildingId),
-            "x-asset-kind":   ascii(kind),
-            "x-filename":     encodeURIComponent(file.name),
-          },
-          body: file,
-        });
-        const j = await r.json();
-        if (!r.ok) { alert("Upload failed for " + file.name + ": " + (j.error || r.status)); continue; }
+      const safeFilename = file.name.replace(/[^a-z0-9._-]/gi, "_");
+      const blobPath = "buildings/" + buildingId + "/" + subfolder + "/" + safeFilename;
 
-        // Build the right shape for this field
+      try {
+        const blob = await upload(blobPath, file, {
+          access: "public",
+          contentType: inferType,
+          handleUploadUrl: "/api/upload-token",
+          clientPayload: JSON.stringify({ buildingId, kind, originalName: file.name }),
+        });
+
+        const baseName = file.name.replace(/\.[^.]+$/, "");
         let entry;
         if (fieldKey === "floorPlanImages") {
-          // floorPlanImages: { name, thumb, pdf } — for PDFs the thumb is the URL itself (the app falls back gracefully)
-          entry = isPDF(j.url)
-            ? { name: file.name.replace(/\.[^.]+$/, ""), thumb: j.url, pdf: j.url }
-            : { name: file.name.replace(/\.[^.]+$/, ""), thumb: j.url, pdf: j.url };
+          entry = { name: baseName, thumb: blob.url, pdf: blob.url };
         } else if (fieldKey === "renderings") {
-          // renderings: { url, caption, category }
-          entry = { url: j.url, caption: file.name.replace(/\.[^.]+$/, ""), category: "Uploaded" };
+          entry = { url: blob.url, caption: baseName, category: "Uploaded" };
         } else if (fieldKey === "brokerDocs") {
-          // brokerDocs: { name, type, url|pdf }
-          entry = { name: file.name.replace(/\.[^.]+$/, ""), type: "document", url: j.url };
+          entry = { name: baseName, type: "document", url: blob.url };
         }
         uploaded.push(entry);
       } catch (e) {
