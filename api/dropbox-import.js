@@ -2,21 +2,37 @@
 export const maxDuration = 120;
 
 const FETCH_OPTS = {
-  headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-  signal: AbortSignal.timeout(12000),
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+  },
+  signal: AbortSignal.timeout(30000),
+  redirect: 'follow',
 };
 
 // -- Dropbox --
 function parseDropbox(html, folderUrl) {
   const files = [];
   const base = folderUrl.split('?')[0];
-  // Pattern 1: embedded filename JSON
+
+  // Pattern 1: embedded filename JSON (works for both old /sh/ and new /scl/fo/ formats)
   for (const m of html.matchAll(/"filename"\s*:\s*"([^"]+\.(?:pdf|jpg|jpeg|png|webp))"/gi)) {
     const name = m[1];
     const ext = name.split('.').pop().toLowerCase();
     files.push({ name, url: base + '/' + encodeURIComponent(name) + '?dl=1', type: ext === 'pdf' ? 'pdf' : 'image' });
   }
-  // Pattern 2: href links
+
+  // Pattern 1b: alternative JSON shape used by newer scl/fo pages — "name":"file.pdf" with a sibling preview_url
+  for (const m of html.matchAll(/"name"\s*:\s*"([^"]+\.(?:pdf|jpg|jpeg|png|webp))"[^}]*?"preview_url"\s*:\s*"([^"]+)"/gi)) {
+    const name = m[1];
+    const previewUrl = m[2].replace(/\\u0026/g, '&').replace(/\\\//g, '/');
+    const downloadUrl = previewUrl.replace(/[?&]dl=0/, '') + (previewUrl.includes('?') ? '&' : '?') + 'dl=1';
+    const ext = name.split('.').pop().toLowerCase();
+    files.push({ name, url: downloadUrl, type: ext === 'pdf' ? 'pdf' : 'image' });
+  }
+
+  // Pattern 2: href links (works for old /sh/ format)
   if (!files.length) {
     for (const m of html.matchAll(/href="(https:\/\/www\.dropbox\.com\/[^"]+\.(?:pdf|jpg|jpeg|png|webp)[^"]*?)"/gi)) {
       const raw = m[1].replace(/\?.*$/, '') + '?dl=1';
@@ -25,6 +41,7 @@ function parseDropbox(html, folderUrl) {
       files.push({ name, url: raw, type: ext === 'pdf' ? 'pdf' : 'image' });
     }
   }
+
   return [...new Map(files.map(f => [f.name, f])).values()];
 }
 
@@ -124,9 +141,30 @@ export default async function handler(req, res) {
         allFiles = parseGoogleDrive(html, folderUrl);
       }
     } else if (folderUrl.includes('dropbox.com')) {
-      const r = await fetch(folderUrl, FETCH_OPTS);
-      const html = await r.text();
+      let r, html;
+      try {
+        r = await fetch(folderUrl, FETCH_OPTS);
+      } catch (e) {
+        const isTimeout = /aborted|timeout/i.test(e.message || '');
+        return res.status(504).json({
+          error: isTimeout
+            ? 'Dropbox folder did not respond within 30 seconds. The folder may be very large or Dropbox may be rate-limiting. Try again or use a Google Drive folder.'
+            : 'Dropbox fetch error: ' + e.message,
+        });
+      }
+      if (!r.ok) {
+        return res.status(502).json({ error: 'Dropbox returned HTTP ' + r.status + '. The folder may be private, deleted, or its sharing settings may have changed.' });
+      }
+      html = await r.text();
       allFiles = parseDropbox(html, folderUrl);
+      if (!allFiles.length) {
+        // Modern scl/fo pages render client-side. Tell the user what to do.
+        return res.status(422).json({
+          error: 'Dropbox folder responded, but no file list was found in the page. Modern Dropbox shared links often render the file list client-side, which we cannot scrape. Workaround: use a Google Drive folder, or upload files individually with the section uploaders below.',
+          htmlSize: html.length,
+          urlFormat: folderUrl.includes('/scl/fo/') ? 'modern (scl/fo)' : 'legacy',
+        });
+      }
     } else {
       return res.status(400).json({ error: 'Only Dropbox and Google Drive URLs supported' });
     }
