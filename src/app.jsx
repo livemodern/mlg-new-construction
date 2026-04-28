@@ -218,7 +218,7 @@ function PricingTab({ buildingId, accent, floorPlans = [] }) {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: T.bgAlt }}>
-                {["Unit", "Floor", "Model", "Beds", "Baths", "A/C SF", "Price", "Status"].map(h => (
+                {["Unit", "Floor", "Model", "Beds", "Baths", "A/C SF", "Price"].map(h => (
                   <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 600, fontSize: 11, color: T.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: "1px solid " + T.border, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -233,9 +233,6 @@ function PricingTab({ buildingId, accent, floorPlans = [] }) {
                   <td style={{ padding: "10px 12px" }}>{u.baths || "--"}</td>
                   <td style={{ padding: "10px 12px" }}>{u.sqft ? u.sqft.toLocaleString() : "--"}</td>
                   <td style={{ padding: "10px 12px", fontWeight: 600, color: accent }}>{u.price ? fmt(u.price) : "--"}</td>
-                  <td style={{ padding: "10px 12px" }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 20, background: u.status === "Available" ? "#e8f5e9" : "#ffebee", color: u.status === "Available" ? "#2e7d32" : "#c62828" }}>{u.status || "Available"}</span>
-                  </td>
                 </tr>
               ))}
             </tbody>
