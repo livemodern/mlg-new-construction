@@ -43,6 +43,172 @@ function categorizeFromPath(pageUrl) {
 // Block social-media tracking pixels and the like
 const SKIP_DOMAIN = /\/(social|facebook|twitter|instagram|linkedin|youtube|tiktok|pinterest|whatsapp|google|adnxs|doubleclick)\./i;
 
+// ---------------------------------------------------------------------------
+// AI vision filter — drops people-focused photos (lifestyle shots with humans
+// as the focus) before they hit the gallery. Filename heuristics catch the
+// obvious "headshot" / "team-portrait" cases earlier; this catches the
+// subtler ones (developer site shows a couple at the pool with the building
+// barely visible behind them, or a model walking through a lobby — both
+// would survive filename filtering but aren't real estate renderings).
+//
+// Returns the filtered array. On any failure (API down, parse error, etc.)
+// returns the input unchanged — better to over-include than break the flow.
+async function filterPeopleImages(renderings, buildingName) {
+  if (!renderings || renderings.length === 0) return renderings;
+  if (!process.env.ANTHROPIC_API_KEY) return renderings;
+
+  const numbered = renderings.map((r, i) => (i + 1) + '. ' + r.url + ' [' + (r.category || 'Uncategorized') + '] ' + (r.caption || '')).join('\n');
+  const prompt = [
+    'You are filtering images for a luxury real estate broker tool. The goal is to keep ONLY architectural and amenity-space imagery — exteriors, interiors, renderings, amenity views, building shots, floor plans, layouts.',
+    '',
+    'REJECT any image where people are the visual focus or subject:',
+    '- Lifestyle shots showing models/residents using a space',
+    '- Couples, families, or groups posing',
+    '- Headshots, portraits, or team/staff photos',
+    '- Photos where humans dominate the frame',
+    '',
+    'ACCEPT images where the space, architecture, or rendering is the focus, even if a small figure appears for scale (e.g. a person silhouette in a wide pool deck shot is fine — a couple having dinner is not).',
+    '',
+    'Building: ' + (buildingName || 'unknown'),
+    '',
+    'CANDIDATES (' + renderings.length + ' images):',
+    numbered,
+    '',
+    'For each, decide KEEP or REJECT. Respond with ONLY a JSON array of decisions in the same order, no explanation:',
+    '["KEEP","REJECT","KEEP",...]',
+    '',
+    'Use the URL filename and your visual knowledge of typical luxury real estate photography to judge. When uncertain, KEEP (we prefer false positives over false negatives).',
+  ].join('\n');
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!r.ok) {
+      console.warn('[filterPeopleImages] API error', r.status, '— passing through unchanged');
+      return renderings;
+    }
+    const j = await r.json();
+    const text = (j.content || []).map(c => c.text || '').join('');
+    const match = text.match(/\[[^\]]+\]/);
+    if (!match) {
+      console.warn('[filterPeopleImages] no array in response — passing through');
+      return renderings;
+    }
+    const decisions = JSON.parse(match[0]);
+    if (!Array.isArray(decisions) || decisions.length !== renderings.length) {
+      console.warn('[filterPeopleImages] decision count mismatch:', decisions.length, 'vs', renderings.length, '— passing through');
+      return renderings;
+    }
+    const kept = renderings.filter((_, i) => /KEEP/i.test(decisions[i] || ''));
+    const dropped = renderings.length - kept.length;
+    console.log('[filterPeopleImages] kept', kept.length, '| dropped', dropped);
+    return kept;
+  } catch (e) {
+    console.warn('[filterPeopleImages] exception:', e.message, '— passing through');
+    return renderings;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Amenity categorizer — converts a flat list of amenity strings into the
+// canonical [{category, icon, items}] shape used elsewhere in the app
+// (see Olara, Alba). Categories are not pre-defined; Claude picks reasonable
+// ones based on the actual amenities present (e.g. a building with a marina
+// gets an "Aquatic & Marina" category, one without doesn't).
+//
+// On any failure, returns the input unchanged so downstream code still works.
+async function categorizeAmenities(flatAmenities, buildingName) {
+  if (!Array.isArray(flatAmenities) || flatAmenities.length === 0) return flatAmenities || [];
+  // If the input is already structured (has .category keys), pass through.
+  if (typeof flatAmenities[0] === 'object' && flatAmenities[0]?.category) return flatAmenities;
+  if (!process.env.ANTHROPIC_API_KEY) return flatAmenities;
+
+  const numbered = flatAmenities.map((a, i) => (i + 1) + '. ' + a).join('\n');
+  const prompt = [
+    'You are organizing an amenity list for a luxury real estate building.',
+    'Group the amenities below into 4-6 logical categories with appropriate emoji icons.',
+    '',
+    'COMMON CATEGORIES (pick ones that fit; not all required, others may be needed):',
+    '- "Aquatic & Marina"  🏊  (pools, cabanas, boat slips, marinas, water features)',
+    '- "Wellness & Fitness"  🧘  (spa, gym, yoga, sauna, steam, treatment rooms)',
+    '- "Dining"  🍽️  (restaurants, bars, room service, private dining)',
+    '- "Outdoor & Recreation"  🌳  (gardens, courts, playgrounds, cinemas, BBQ)',
+    '- "Social & Work"  🎯  (lounges, libraries, business centers, ballrooms, simulators)',
+    '- "Building Services"  🏢  (concierge, valet, parking, EV, app, lobby, security)',
+    '',
+    'Building: ' + (buildingName || 'unknown'),
+    '',
+    'AMENITIES (' + flatAmenities.length + '):',
+    numbered,
+    '',
+    'Return ONLY valid JSON in this exact shape (no markdown, no backticks, no commentary):',
+    '[',
+    '  {"category":"Aquatic & Marina","icon":"🏊","items":["amenity 1","amenity 2"]},',
+    '  {"category":"Wellness & Fitness","icon":"🧘","items":["amenity 3"]}',
+    ']',
+    '',
+    'EVERY amenity from the input must appear in EXACTLY ONE category. Use the amenity strings VERBATIM — do not paraphrase, shorten, or rewrite them. If an amenity does not fit any common category, create a new appropriately-named one.',
+  ].join('\n');
+
+  try {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!r.ok) {
+      console.warn('[categorizeAmenities] API error', r.status, '— passing through unchanged');
+      return flatAmenities;
+    }
+    const j = await r.json();
+    const text = (j.content || []).map(c => c.text || '').join('');
+    // Strip code fences if Claude added them despite the instruction
+    const cleaned = text.replace(/^```(?:json)?/im, '').replace(/```$/m, '').trim();
+    const match = cleaned.match(/\[[\s\S]*\]/);
+    if (!match) {
+      console.warn('[categorizeAmenities] no array in response — passing through');
+      return flatAmenities;
+    }
+    const categorized = JSON.parse(match[0]);
+    if (!Array.isArray(categorized) || categorized.length === 0) {
+      console.warn('[categorizeAmenities] empty result — passing through');
+      return flatAmenities;
+    }
+    // Sanity check: every input amenity should appear in some category's items
+    const seen = new Set(categorized.flatMap(c => c.items || []));
+    const missing = flatAmenities.filter(a => !seen.has(a));
+    if (missing.length > 0) {
+      // Append missing ones to a "Other" category so we never lose data
+      console.warn('[categorizeAmenities] adding', missing.length, 'missing amenities to Other category');
+      categorized.push({ category: 'Other', icon: '✨', items: missing });
+    }
+    console.log('[categorizeAmenities] organized', flatAmenities.length, 'amenities into', categorized.length, 'categories');
+    return categorized;
+  } catch (e) {
+    console.warn('[categorizeAmenities] exception:', e.message, '— passing through');
+    return flatAmenities;
+  }
+}
+
 async function fetchPage(url) {
   try {
     const controller = new AbortController();
@@ -544,7 +710,22 @@ export default async function handler(req, res) {
       url:  p.url,
     }));
 
-    building.renderings      = renderingItems;
+    // ---- AI post-processing pass ---------------------------------------
+    // Two refinements to the scraped/captioned data before we hand it back
+    // to the client:
+    //   1. filterPeopleImages — drop lifestyle shots where humans are the focus.
+    //      Filename heuristics caught the obvious cases earlier; this catches
+    //      the subtle "couple at the pool" / "model in the lobby" shots that
+    //      slip past pattern matching.
+    //   2. categorizeAmenities — convert the flat amenity list Claude returned
+    //      into the structured [{category, icon, items}] shape the UI expects.
+    // Both pass through unchanged on any error (logged), so a failure here
+    // never blocks a successful research result.
+    const filteredRenderings = await filterPeopleImages(renderingItems, building.suggestedName);
+    const structuredAmenities = await categorizeAmenities(building.amenities || [], building.suggestedName);
+
+    building.renderings      = filteredRenderings;
+    building.amenities       = structuredAmenities;
     building.floorPlanImages = [...floorPlanItems, ...pdfFloorPlans];
     building.brokerDocs      = pdfBrokerDocs;
     building.pagesScraped    = validPages.length;

@@ -1391,7 +1391,6 @@ export default function App() {
   const [activeId, setActiveId] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editBuilding, setEditBuilding] = useState(null);
-  const [migrating, setMigrating] = useState(false);
   const isMobile = useIsMobile();
 
   async function loadBuildings() {
@@ -1422,22 +1421,6 @@ export default function App() {
 
   useEffect(() => { loadBuildings(); }, []);
 
-  async function migrateToKV() {
-    setMigrating(true);
-    try {
-      for (const b of buildings) {
-        const id = b.id || b.suggestedId;
-        await fetch("/api/buildings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, data: { ...b, id } }),
-        });
-      }
-      alert("Migrated " + buildings.length + " buildings to database.");
-    } catch (e) { alert("Migration error: " + e.message); }
-    setMigrating(false);
-  }
-
   function handleBuildingAdded(newBuilding) {
     const id = newBuilding.id || newBuilding.suggestedId;
     setBuildings(prev => {
@@ -1467,11 +1450,6 @@ export default function App() {
           <div style={{ fontSize: isMobile ? 13 : 14, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>New Construction Tool</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {buildings.length > 0 && !loading && (
-            <button onClick={migrateToKV} disabled={migrating} title="Sync to database" style={{ padding: "7px 10px", background: T.bgAlt, border: "1px solid " + T.border, borderRadius: 6, fontSize: 11, cursor: "pointer", color: T.textSub, display: isMobile ? "none" : "block" }}>
-              {migrating ? "Syncing..." : "Sync DB"}
-            </button>
-          )}
           <button onClick={() => setShowAdd(true)} style={{ padding: "8px 14px", background: T.text, border: "none", borderRadius: 6, color: T.textInverse, fontSize: 13, fontWeight: 700, cursor: "pointer", minHeight: 36, whiteSpace: "nowrap" }}>+ Add</button>
         </div>
       </div>
