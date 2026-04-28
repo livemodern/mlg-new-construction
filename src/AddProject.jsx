@@ -238,18 +238,177 @@ export default function AddProject({ onComplete, onCancel }) {
     // Don't auto-advance so user can see results
   }
 
-  // ── Save to KV ────────────────────────────────────────────────────────────
+  // ── Save to KV (Stage 1) — basics + content ────────────────────────────────
+  // Floor plans (Stage 2) are mirrored to Blob, thumbnails rendered, and AI
+  // metadata extracted in the background after the building appears in the UI.
+  // This keeps the wizard responsive — user lands in the new building immediately
+  // and watches floor plan cards populate as the pipeline runs.
+  const [submitState, setSubmitState] = useState(null);
+  // submitState shape: null | "saving" | "processing-floorplans" | "done"
+  const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0, name: "" });
+
   async function handleSubmit() {
     const bid = project.suggestedId || project.name?.toLowerCase().replace(/[^a-z0-9]/g, "").substring(0, 20) || "building-" + Date.now();
-    const data = { ...project, id: bid };
+
+    // Stage 1: write building to KV with whatever we have.
+    setSubmitState("saving");
+    const stage1Data = { ...project, id: bid };
     try {
       await fetch("/api/buildings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: bid, data }),
+        body: JSON.stringify({ id: bid, data: stage1Data }),
       });
-    } catch (e) { console.warn("KV save:", e.message); }
-    onComplete({ ...data, id: bid });
+    } catch (e) {
+      console.warn("KV save:", e.message);
+      setSubmitState(null);
+      alert("Could not save building: " + e.message);
+      return;
+    }
+
+    // Stage 2: process floor plan files. This can take a while (each plan is
+    // fetch → render PNG → upload PDF → upload thumb → AI extract). We do it
+    // in-place inside the wizard so the user can watch progress; on completion
+    // we call onComplete with the fully-processed building so the parent app
+    // refreshes with thumbnails ready.
+    const fpFiles = (project.floorPlanImages || []).filter(it => it.pdf);
+    if (fpFiles.length === 0) {
+      onComplete({ ...stage1Data, id: bid });
+      return;
+    }
+
+    setSubmitState("processing-floorplans");
+    setSubmitProgress({ current: 0, total: fpFiles.length, name: "" });
+
+    // Lazy-load the heavy libs only when the user actually saves.
+    let pdfjsLib, blobClient;
+    try {
+      pdfjsLib = await import("https://esm.sh/pdfjs-dist@4.0.379/build/pdf.mjs");
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.0.379/build/pdf.worker.mjs";
+      blobClient = await import("https://esm.sh/@vercel/blob@0.27.3/client");
+    } catch (e) {
+      console.warn("Floor plan processor libs failed to load:", e.message);
+      // Skip Stage 2 entirely; building is already saved with raw URLs.
+      onComplete({ ...stage1Data, id: bid });
+      return;
+    }
+
+    const processedPlans = [];
+    for (let i = 0; i < fpFiles.length; i++) {
+      const it = fpFiles[i];
+      setSubmitProgress({ current: i + 1, total: fpFiles.length, name: it.name || ("Plan " + (i + 1)) });
+      const cleanName = (it.name || ("plan-" + i)).replace(/[^a-zA-Z0-9-_]/g, "-").substring(0, 60);
+
+      try {
+        // Fetch source PDF
+        const srcRes = await fetch(it.pdf);
+        if (!srcRes.ok) throw new Error("source fetch " + srcRes.status);
+        const buf = await srcRes.arrayBuffer();
+        const isPdf = /pdf/i.test(srcRes.headers.get("content-type") || "") || /\.pdf(\?|$)/i.test(it.pdf);
+
+        let mirroredUrl = it.pdf;
+        let thumbUrl = it.thumb;
+
+        if (isPdf) {
+          // Mirror PDF to our Blob
+          const pdfBlob = await blobClient.upload(
+            "buildings/" + bid + "/floorplans/" + cleanName + ".pdf",
+            new Blob([buf], { type: "application/pdf" }),
+            {
+              access: "public",
+              handleUploadUrl: "/api/upload-token",
+              contentType: "application/pdf",
+              clientPayload: JSON.stringify({ buildingId: bid, kind: "floorplan", name: it.name }),
+            }
+          );
+          mirroredUrl = pdfBlob.url;
+
+          // Render page 1 → PNG → mirror to Blob
+          try {
+            const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+            const page = await pdfDoc.getPage(1);
+            const viewport = page.getViewport({ scale: 1.5 });
+            const canvas = document.createElement("canvas");
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext("2d");
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            const png = await new Promise(r => canvas.toBlob(r, "image/png"));
+            if (png) {
+              const thumbResult = await blobClient.upload(
+                "buildings/" + bid + "/floorplans/" + cleanName + "-thumb.png",
+                png,
+                {
+                  access: "public",
+                  handleUploadUrl: "/api/upload-token",
+                  contentType: "image/png",
+                  clientPayload: JSON.stringify({ buildingId: bid, kind: "floorplan-thumb", name: it.name }),
+                }
+              );
+              thumbUrl = thumbResult.url;
+            }
+          } catch (e) {
+            console.warn("Thumb render failed for", it.name, e.message);
+          }
+
+          // AI metadata extraction via /api/upload-pdf
+          try {
+            const aiRes = await fetch("/api/upload-pdf", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                kind: "floorplan",
+                blobUrl: mirroredUrl,
+                thumbUrl,
+                buildingId: bid,
+                sourceName: it.name,
+              }),
+            });
+            // The API persists into KV directly; we just keep going.
+            await aiRes.json().catch(() => null);
+          } catch (e) {
+            console.warn("AI extract failed for", it.name, e.message);
+          }
+        }
+
+        processedPlans.push({
+          name: it.name || ("Plan " + (i + 1)),
+          pdf: mirroredUrl,
+          thumb: thumbUrl || mirroredUrl,
+          beds: null, baths: null, den: false,
+          interiorSF: null, exteriorSF: null, totalSF: null,
+          exposure: null, floors: null, tier: null, units: [],
+        });
+      } catch (e) {
+        console.warn("Floor plan failed:", it.name, e.message);
+        // Still push so user sees it as a card; thumb may be the original PDF URL
+        processedPlans.push({
+          name: it.name || ("Plan " + (i + 1)),
+          pdf: it.pdf, thumb: it.thumb || it.pdf,
+          beds: null, baths: null, den: false,
+          interiorSF: null, exteriorSF: null, totalSF: null,
+          exposure: null, floors: null, tier: null, units: [],
+        });
+      }
+    }
+
+    // Re-fetch building from KV — the upload-pdf calls above mutated it
+    // in-place with extracted metadata (and merged into existing floorPlans
+    // by name). Hand that authoritative copy to the parent.
+    let finalBuilding = stage1Data;
+    try {
+      const r = await fetch("/api/buildings?_=" + Date.now());
+      if (r.ok) {
+        const all = await r.json();
+        const fresh = all.find(b => (b.id || b.suggestedId) === bid);
+        if (fresh) finalBuilding = fresh;
+      }
+    } catch (e) { /* fall back to local */ }
+
+    setSubmitState("done");
+    onComplete({ ...finalBuilding, id: bid });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -497,52 +656,105 @@ export default function AddProject({ onComplete, onCancel }) {
   // ═══════════════════════════════════════════════════════════════════════════
   // STEP 5: GALLERY
   // ═══════════════════════════════════════════════════════════════════════════
-  const renderGallery = () => (
-    <div>
-      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Gallery</h2>
-      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
-        {project.renderings?.length ? `${project.renderings.length} images loaded from research.` : "No images loaded yet."} 
-        {" "}Images are auto-pulled when you scan a site above.
-      </p>
-      {project.renderings?.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
-          {project.renderings.slice(0, 12).map((img, i) => (
-            <div key={i} style={{ aspectRatio: "4/3", borderRadius: 6, overflow: "hidden", background: T.bgAlt, border: `1px solid ${T.border}` }}>
-              <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => e.target.style.opacity = 0} />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const renderGallery = () => {
+    const removeRendering = (idx) => {
+      setProject(p => ({ ...p, renderings: (p.renderings || []).filter((_, i) => i !== idx) }));
+    };
+    const total = project.renderings?.length || 0;
+    return (
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Gallery</h2>
+        <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
+          {total === 0
+            ? "No images loaded yet. Images are auto-pulled when you scan a site above."
+            : `${total} image${total === 1 ? "" : "s"} loaded. Click ✕ to remove any image you don't want to keep.`}
+        </p>
+        {total > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10 }}>
+            {project.renderings.map((img, i) => (
+              <div key={i} style={{ position: "relative", aspectRatio: "4/3", borderRadius: 6, overflow: "hidden", background: T.bgAlt, border: `1px solid ${T.border}` }}>
+                <img
+                  src={img.url}
+                  alt={img.caption || ""}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  onError={e => e.target.style.opacity = 0}
+                />
+                {img.category && (
+                  <div style={{ position: "absolute", bottom: 4, left: 4, padding: "2px 6px", background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 10, fontWeight: 600, borderRadius: 3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {img.category}
+                  </div>
+                )}
+                <button
+                  onClick={() => removeRendering(i)}
+                  title="Remove this image"
+                  style={{ position: "absolute", top: 4, right: 4, width: 22, height: 22, borderRadius: "50%", background: "rgba(0,0,0,0.7)", color: "#fff", border: "none", fontSize: 12, fontWeight: 700, lineHeight: 1, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                >×</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STEP 6: FLOOR PLANS
   // ═══════════════════════════════════════════════════════════════════════════
-  const renderFloorPlans = () => (
-    <div>
-      <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Floor Plans</h2>
-      <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
-        {project.floorPlans?.length ? `${project.floorPlans.length} floor plans extracted.` : "No floor plans extracted yet."}
-        {" "}{project.floorPlanImages?.length ? `${project.floorPlanImages.length} floor plan images loaded.` : ""}
-      </p>
-      {project.floorPlans?.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {project.floorPlans.slice(0, 10).map((plan, i) => (
-            <div key={i} style={{ padding: "12px 16px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{plan.name || plan.model}</div>
-                <div style={{ fontSize: 12, color: T.textSub, marginTop: 2 }}>
-                  {[plan.beds && String(plan.beds), plan.baths && String(plan.baths), (plan.interiorSF || plan.sqft) && ((plan.interiorSF || plan.sqft) + " SF")].filter(Boolean).join("  ·  ")}
+  const renderFloorPlans = () => {
+    const items = project.floorPlanImages || [];
+    const removeFP = (idx) => {
+      setProject(p => ({ ...p, floorPlanImages: (p.floorPlanImages || []).filter((_, i) => i !== idx) }));
+    };
+    const renameFP = (idx, newName) => {
+      setProject(p => ({
+        ...p,
+        floorPlanImages: (p.floorPlanImages || []).map((it, i) => i === idx ? { ...it, name: newName } : it),
+      }));
+    };
+    return (
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 300, marginBottom: 8, color: T.text }}>Floor Plans</h2>
+        <p style={{ fontSize: 13, color: T.textSub, marginBottom: 20 }}>
+          {items.length === 0
+            ? "No floor plan files discovered yet. The site may not list them publicly — you can upload PDFs after creating the building."
+            : `${items.length} floor plan file${items.length === 1 ? "" : "s"} discovered. Edit names or remove anything that's not a floor plan. After you save, each PDF will be mirrored to your storage and a thumbnail rendered automatically.`}
+        </p>
+        {items.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {items.map((it, i) => {
+              const isImg = /\.(jpe?g|png|gif|webp)(\?|$)/i.test(it.thumb || it.pdf || "");
+              return (
+                <div key={i} style={{ padding: "10px 12px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 4, overflow: "hidden", background: T.bgAlt, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: T.textMuted }}>
+                    {isImg
+                      ? <img src={it.thumb || it.pdf} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; e.target.parentElement.textContent = "PDF"; }} />
+                      : "PDF"}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <input
+                      type="text"
+                      value={it.name || ""}
+                      onChange={e => renameFP(i, e.target.value)}
+                      placeholder="Floor plan name"
+                      style={{ width: "100%", padding: "6px 8px", fontSize: 13, fontWeight: 600, color: T.text, border: `1px solid ${T.border}`, borderRadius: 4, background: T.bg, marginBottom: 4 }}
+                    />
+                    <a href={it.pdf} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: T.textMuted, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                      {(it.pdf || "").length > 80 ? (it.pdf || "").substring(0, 80) + "…" : it.pdf}
+                    </a>
+                  </div>
+                  <button
+                    onClick={() => removeFP(i)}
+                    title="Remove"
+                    style={{ width: 28, height: 28, borderRadius: 4, background: T.bgAlt, color: T.textSub, border: `1px solid ${T.border}`, fontSize: 14, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
+                  >×</button>
                 </div>
-              </div>
-              {(plan.priceFrom || plan.price) && <div style={{ fontSize: 14, fontWeight: 700, color: "#2D9FBF" }}>${((plan.priceFrom || plan.price) / 1000000).toFixed(2)}M</div>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // ═══════════════════════════════════════════════════════════════════════════
   // STEP 7: REVIEW
@@ -561,8 +773,18 @@ export default function AddProject({ onComplete, onCancel }) {
           ["Units", project.totalUnits],
           ["Floors", project.totalFloors],
           ["Est. Delivery", project.estimatedDelivery],
-          ["Renderings", project.renderings?.length + " images"],
-          ["Floor Plans", project.floorPlans?.length + " plans"],
+          ["Renderings", (project.renderings?.length || 0) + " images"],
+          ["Floor Plans", ((project.floorPlanImages?.length || 0) + (project.floorPlans?.length || 0)) + " files"],
+          ["Amenities", (() => {
+            const a = project.amenities || [];
+            if (a.length === 0) return "0 items";
+            // structured shape: count items across all categories
+            if (typeof a[0] === "object" && a[0]?.category) {
+              const totalItems = a.reduce((sum, c) => sum + (c.items?.length || 0), 0);
+              return totalItems + " items in " + a.length + " categories";
+            }
+            return a.length + " items";
+          })()],
           ["Key Facts", project.keyFacts?.length + " items"],
         ].map(([k, v]) => v && v !== "undefined items" && (
           <div key={k} style={{ padding: "10px 14px", background: T.bgCard, border: `1px solid ${T.border}`, borderRadius: 8 }}>
@@ -571,9 +793,35 @@ export default function AddProject({ onComplete, onCancel }) {
           </div>
         ))}
       </div>
-      <button onClick={handleSubmit} style={{ width: "100%", padding: "16px", background: project.accentColor || "#111", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", minHeight: 54 }}>
-        ✓ Add Building
+      <button
+        onClick={handleSubmit}
+        disabled={submitState === "saving" || submitState === "processing-floorplans"}
+        style={{
+          width: "100%",
+          padding: "16px",
+          background: submitState ? "#888" : (project.accentColor || "#111"),
+          border: "none",
+          borderRadius: 10,
+          color: "#fff",
+          fontSize: 16,
+          fontWeight: 700,
+          cursor: submitState ? "not-allowed" : "pointer",
+          minHeight: 54,
+          opacity: submitState ? 0.85 : 1,
+        }}
+      >
+        {submitState === "saving" && "Saving…"}
+        {submitState === "processing-floorplans" &&
+          ("Processing floor plan " + submitProgress.current + " of " + submitProgress.total +
+            (submitProgress.name ? " — " + submitProgress.name : "") + "…")}
+        {!submitState && "✓ Add Building"}
+        {submitState === "done" && "Done"}
       </button>
+      {submitState === "processing-floorplans" && (
+        <div style={{ marginTop: 12, padding: "10px 14px", background: T.bgCard, borderRadius: 8, fontSize: 12, color: T.textSub, lineHeight: 1.5 }}>
+          The building is already saved. Floor plans are being mirrored to your storage, thumbnails rendered, and metadata extracted. You'll see them populate after this finishes.
+        </div>
+      )}
     </div>
   );
 
