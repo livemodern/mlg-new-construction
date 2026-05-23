@@ -2,6 +2,7 @@
 // Mobile-first, KV-backed, fully editable
 import { useState, useEffect, useRef } from "react";
 import AddProject from "./AddProject.jsx";
+import { imgOpt, imgSrcSet } from "./lib/img.js";
 
 // Theme (locked)
 const T = {
@@ -67,7 +68,7 @@ function GalleryModal({ images, startIndex, onClose }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.93)", zIndex: 99999, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
       <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, maxWidth: "92vw" }}>
-        <img src={img.url} alt={img.caption} style={{ maxWidth: "92vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 4 }} onError={e => { e.target.alt = "Unavailable"; }} />
+        <img src={imgOpt(img.url, 1600, 85)} srcSet={imgSrcSet(img.url, [800, 1200, 1600, 2000], 85)} sizes="92vw" alt={img.caption} loading="eager" decoding="async" style={{ maxWidth: "92vw", maxHeight: "78vh", objectFit: "contain", borderRadius: 4 }} onError={e => { e.target.alt = "Unavailable"; }} />
         <div style={{ color: "#eee", fontSize: 13, textAlign: "center" }}>
           {img.caption}
           <span style={{ color: "#aaa", marginLeft: 8 }}>{" -- "}{img.category}</span>
@@ -115,7 +116,7 @@ function RenderingGallery({ renderings, accent }) {
           const globalIdx = renderings.indexOf(img);
           return (
             <div key={i} onClick={() => setModal(globalIdx)} style={{ cursor: "pointer", borderRadius: 6, overflow: "hidden", border: "1px solid " + T.border, position: "relative", aspectRatio: "4/3", background: T.bgAlt }}>
-              <img src={img.url} alt={img.caption} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
+              <img src={imgOpt(img.url, 400)} srcSet={imgSrcSet(img.url, [400, 600, 800])} sizes="(max-width: 768px) 50vw, 200px" alt={img.caption} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
               <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent,rgba(0,0,0,0.65))", padding: "18px 8px 6px", fontSize: 10, color: "#fff" }}>{img.caption}</div>
             </div>
           );
@@ -639,7 +640,7 @@ function FileSection({ buildingId, fieldKey, kind, label, accept, note, items, o
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: T.bg, border: "1px solid " + T.border, borderRadius: 6 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 4, background: T.bgAlt, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden", fontSize: 11, fontWeight: 700, color: T.textMuted }}>
                   {d.isImage && d.url
-                    ? <img src={d.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
+                    ? <img src={imgOpt(d.url, 80)} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => { e.target.style.display = "none"; }} />
                     : "PDF"}
                 </div>
                 <input
@@ -816,7 +817,7 @@ function FloorPlanCard({ plan, accent, T }) {
     <div style={{ background: T.bgCard, border: "1px solid " + T.border, borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
       <div style={{ aspectRatio: "4 / 3", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
         {plan.thumb ? (
-          <img src={plan.thumb} alt={plan.name || "Floor plan"} style={{ width: "100%", height: "100%", objectFit: "contain", background: "white" }} />
+          <img src={imgOpt(plan.thumb, 400)} srcSet={imgSrcSet(plan.thumb, [400, 600, 800])} sizes="(max-width: 768px) 50vw, 200px" alt={plan.name || "Floor plan"} loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "contain", background: "white" }} />
         ) : plan.pdf ? (
           <a href={plan.pdf} target="_blank" rel="noreferrer" style={{ color: accent, fontSize: 13, textDecoration: "none", padding: 16, textAlign: "center" }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>📄</div>
