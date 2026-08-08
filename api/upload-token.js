@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/upload-token.js
 // Issues short-lived signed tokens for direct browser-to-Blob uploads.
 // The browser library `@vercel/blob/client`'s `upload()` calls this endpoint
@@ -11,6 +12,9 @@ import { getBlobToken } from './_blob-env.js';
 export const maxDuration = 30;
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const TOKEN = getBlobToken();

@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/research-building.js
 // Claude-powered building research v3
 // Uses fetch() for all HTTP -- no require() needed
@@ -367,6 +368,9 @@ async function discoverFromSitemap(host, base) {
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const { url } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url required' });

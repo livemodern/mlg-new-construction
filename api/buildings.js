@@ -1,6 +1,12 @@
 // api/buildings.js — KV CRUD using fetch() + Upstash REST API
+import { requireNcAuth } from './_auth.js';
+
 export default async function handler(req, res) {
   res.setHeader('Content-Type', 'application/json');
+
+  // GET stays public — mlg-site and the mini-sites read this feed server-side
+  // with no credentials. POST/DELETE mutate KV and require the shared token.
+  if (req.method !== 'GET' && !requireNcAuth(req, res)) return;
   const { id } = req.query;
   const KV_URL   = process.env.KV_REST_API_URL;
   const KV_TOKEN = process.env.KV_REST_API_TOKEN;

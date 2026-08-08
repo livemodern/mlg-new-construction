@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/dropbox-import.js -- fetch()-based, with Google Drive subfolder recursion
 export const maxDuration = 120;
 
@@ -122,6 +123,9 @@ function parseGoogleDrive(html, folderUrl) {
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const { folderUrl } = req.body || {};
   if (!folderUrl) return res.status(400).json({ error: 'folderUrl required' });

@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/scrape-project.js
 // Deep multi-page scraper — visits home, amenities, residences, team, contact pages
 // and extracts everything it can to pre-fill the Add Building form.
@@ -81,6 +82,9 @@ function getLinks(html, base) {
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

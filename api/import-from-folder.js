@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/import-from-folder.js
 // Take a Drive folder URL, enumerate it, download each file,
 // classify it via filename heuristics + AI for ambiguous PDFs, upload to Blob,
@@ -111,6 +112,9 @@ async function extractPricing(pdfBase64) {
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const { folderUrl, buildingId } = req.body || {};
   if (!folderUrl)  return res.status(400).json({ error: 'folderUrl required' });

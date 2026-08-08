@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/upload-pdf.js — modes:
 //   Mode A (legacy):    raw PDF in request body (Content-Type: application/pdf).
 //                       Subject to Vercel's 4.5MB serverless body limit.
@@ -133,6 +134,9 @@ async function persistFloorPlan(buildingId, plan, blobUrl, sourceName, thumbUrl)
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const BLOB_TOKEN = getBlobToken();
   if (!BLOB_TOKEN) return res.status(500).json({ error: 'BLOB_READ_WRITE_TOKEN not configured.' });

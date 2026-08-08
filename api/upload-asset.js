@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/upload-asset.js
 // Generic file upload to Vercel Blob via the official @vercel/blob SDK.
 // Headers: x-building-id, x-asset-kind ("floorplan" | "rendering" | "brokerdoc"), x-filename
@@ -32,6 +33,9 @@ function inferContentType(filename, fallback) {
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const buildingId = req.headers['x-building-id'];

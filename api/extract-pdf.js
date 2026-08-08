@@ -1,7 +1,11 @@
+import { requireNcAuth } from './_auth.js';
 // api/extract-pdf.js
 // Receives a PDF as base64, sends to Claude to extract all real estate data
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

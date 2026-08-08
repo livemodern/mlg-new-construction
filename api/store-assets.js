@@ -1,3 +1,4 @@
+import { requireNcAuth } from './_auth.js';
 // api/store-assets.js — downloads images + PDFs to Vercel Blob via @vercel/blob SDK
 import { put } from '@vercel/blob';
 import { getBlobToken } from './_blob-env.js';
@@ -52,6 +53,9 @@ async function uploadToBlob(filename, buf, ct) {
 }
 
 export default async function handler(req, res) {
+  // Writes / AI calls require the shared admin token — see api/_auth.js.
+  if (!requireNcAuth(req, res)) return;
+
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const { buildingId, images = [], pdfs = [] } = req.body || {};
   if (!buildingId) return res.status(400).json({ error: 'buildingId required' });
